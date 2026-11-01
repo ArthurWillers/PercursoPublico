@@ -22,9 +22,13 @@ MUNICIPAL_ELECTION_YEARS = (2008, 2012, 2016, 2020, 2024)
 ELECTION_YEARS = (2008, 2010, 2012, 2014, 2016, 2018, 2020, 2022, 2024, 2026)
 MAX_VEREADOR_CANDIDATES = 2500
 MAX_ELECTION_SUPPLIERS = 1000
-CACHE_SCHEMA_TAG = 'v2'
+CACHE_SCHEMA_TAG = 'v3-executivo'
 
 GENERAL_OFFICES = {
+    '1': 'presidente',
+    '3': 'governador',
+    'PRESIDENTE': 'presidente',
+    'GOVERNADOR': 'governador',
     '5': 'senador',
     '6': 'deputado_federal',
     'SENADOR': 'senador',
@@ -440,6 +444,7 @@ def normalize_election(
     return {
         'year': year,
         'scope': scope,
+        'collectedOffices': sorted(set(_allowed_offices(year).values())),
         'status': 'collected',
         'reason': None,
         'fetchedAt': fetched_at,
@@ -480,6 +485,7 @@ def unavailable_election(year, reason):
 _KEEP_COLUMNS = frozenset({
     'CD_CARGO', 'COD_CARGO', 'DS_CARGO', 'DESCRICAO_CARGO', 'Cargo',
     'SQ_CANDIDATO', 'SEQUENCIAL_CANDIDATO', 'Sequencial Candidato',
+    'NR_CPF_CANDIDATO', 'CPF_CANDIDATO', 'CPF candidato', 'CPF do candidato',
     'NM_CANDIDATO', 'NOME_CANDIDATO', 'Nome candidato',
     'NM_URNA_CANDIDATO', 'NOME_URNA_CANDIDATO',
     'NR_CANDIDATO', 'NUMERO_CANDIDATO', 'NR_CAND', 'Número candidato', 'Numero candidato',
@@ -576,7 +582,7 @@ def _read_csv_from_zip(raw_bytes, prefixes, year=None):
 
 def _http_range_get(url, start_byte, end_byte, timeout=90):
     headers = {
-        'User-Agent': 'Parlamentares/1.0 (public financial data)',
+        'User-Agent': 'PercursoPublico/1.0 (public financial data)',
         'Accept': '*/*',
         'Range': f'bytes={start_byte}-{end_byte}'
     }
@@ -595,7 +601,7 @@ def _http_range_get(url, start_byte, end_byte, timeout=90):
 
 
 def _http_head_meta(url, timeout=45):
-    headers = {'User-Agent': 'Parlamentares/1.0 (public financial data)', 'Accept': '*/*'}
+    headers = {'User-Agent': 'PercursoPublico/1.0 (public financial data)', 'Accept': '*/*'}
     for attempt in range(4):
         try:
             with urlopen(Request(url, method='HEAD', headers=headers), timeout=timeout) as resp:
@@ -698,7 +704,7 @@ def _stream_remote_zip_entry_lines(url, entry):
         chunk_end = min(cursor + window_bytes - 1, data_end)
         for attempt in range(4):
             headers = {
-                'User-Agent': 'Parlamentares/1.0 (public financial data)',
+                'User-Agent': 'PercursoPublico/1.0 (public financial data)',
                 'Accept': '*/*',
                 'Range': f'bytes={cursor}-{chunk_end}'
             }
@@ -768,8 +774,9 @@ def collect_election_year(client, year, mandate_supplier_keys=None):
     acc_url = accounts_url(year)
     cache_days = client.historical_cache_days(year)
 
-    cache_file = client.cache / f'tse-election-{year}-{CACHE_SCHEMA_TAG}.json.gz'
-    cache_meta_file = client.cache / f'tse-election-{year}-{CACHE_SCHEMA_TAG}.meta.json'
+    cache_tag = 'v2' if year in MUNICIPAL_ELECTION_YEARS else CACHE_SCHEMA_TAG
+    cache_file = client.cache / f'tse-election-{year}-{cache_tag}.json.gz'
+    cache_meta_file = client.cache / f'tse-election-{year}-{cache_tag}.meta.json'
     if cache_file.exists() and cache_meta_file.exists():
         try:
             meta = json.loads(cache_meta_file.read_text(encoding='utf-8'))
@@ -799,7 +806,9 @@ def collect_election_year(client, year, mandate_supplier_keys=None):
                     acc_bytes = client.get(candidate_acc_url, cache_days=cache_days)
                     acc_url = candidate_acc_url
                     break
-                except (HTTPError, URLError, TimeoutError, FileNotFoundError) as exc:
+                except HTTPError as exc:
+                    if exc.code != 404:
+                        raise
                     last_exc = exc
             if acc_bytes is None:
                 return unavailable_election(
@@ -819,7 +828,9 @@ def collect_election_year(client, year, mandate_supplier_keys=None):
                 fetched_at=fetched_at,
                 mandate_supplier_keys=mandate_supplier_keys
             )
-        except (HTTPError, URLError, TimeoutError, FileNotFoundError, ValueError, zipfile.BadZipFile) as exc:
+        except HTTPError as exc:
+            if exc.code != 404:
+                raise
             return unavailable_election(
                 year,
                 f'Pacote de prestação de contas eleitorais {year} ainda não disponível ou inacessível na origem ({exc.__class__.__name__}).'
@@ -829,7 +840,9 @@ def collect_election_year(client, year, mandate_supplier_keys=None):
     try:
         cand_meta = _http_head_meta(cand_url)
         cand_entries = _fetch_remote_zip_directory(cand_url, cand_meta['size'])
-    except (HTTPError, URLError, TimeoutError, ValueError, RuntimeError) as exc:
+    except HTTPError as exc:
+        if exc.code != 404:
+            raise
         return unavailable_election(
             year,
             f'Pacote de candidaturas eleitorais {year} ainda não disponível ou inacessível na origem ({exc.__class__.__name__}).'
@@ -844,7 +857,9 @@ def collect_election_year(client, year, mandate_supplier_keys=None):
             acc_entries = _fetch_remote_zip_directory(candidate_acc_url, acc_meta['size'])
             acc_url = candidate_acc_url
             break
-        except (HTTPError, URLError, TimeoutError, ValueError, RuntimeError) as exc:
+        except HTTPError as exc:
+            if exc.code != 404:
+                raise
             last_exc = exc
             continue
 
@@ -890,8 +905,6 @@ def collect_election_year(client, year, mandate_supplier_keys=None):
             'sources': [client.sources[cand_url], client.sources[acc_url]]
         }), encoding='utf-8')
         return result
-    except (HTTPError, URLError, TimeoutError, ValueError, RuntimeError, zlib.error) as exc:
-        return unavailable_election(
-            year,
-            f'Pacote eleitoral {year} incompleto ou indisponível na origem ({exc.__class__.__name__}: {exc}).'
-        )
+    except (HTTPError, URLError, TimeoutError, ValueError, RuntimeError, zlib.error):
+        # Falha de leitura/normalização impede a publicação; somente 404 é ausência.
+        raise

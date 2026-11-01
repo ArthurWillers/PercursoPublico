@@ -12,6 +12,8 @@ from pathlib import Path
 from pipeline.http import Client
 from pipeline.sources import camara, senado, tse
 from pipeline.aggregate.expenses import summarize, summarize_suppliers
+from pipeline.aggregate.people import write_people
+from pipeline.validate.people import validate_people
 from pipeline.validate.integrity import validate, validate_suppliers, validate_election, safe_money
 
 
@@ -20,7 +22,7 @@ def write_json(path, value):
     path.write_text(json.dumps(value, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
 
 
-def publish(destination, members, records, summaries, metadata, year_batches=None, suppliers=None, elections=None, election_batches=None, sources_fn=None):
+def publish(destination, members, records, summaries, metadata, year_batches=None, suppliers=None, elections=None, election_batches=None, sources_fn=None, people_fn=None):
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix='.financial-data-', dir=destination.parent))
     backup = destination.with_name('.data-previous')
@@ -58,6 +60,8 @@ def publish(destination, members, records, summaries, metadata, year_batches=Non
                 write_json(staging / f'elections-{election_year}.json', election_data)
                 del election_data
                 gc.collect()
+        if people_fn is not None:
+            metadata['people'] = people_fn(staging)
         if sources_fn is not None:
             metadata['sources'] = sources_fn()
         write_json(staging / 'index.json', {key: value for key, value in metadata.items() if key != 'sources'})
@@ -134,6 +138,7 @@ def verify_output(directory):
             election_data = json.loads(election_path.read_text())
             validate_election(election_data)
             del election_data
+    validate_people(directory)
     safe_money(historical_cents)
     return manifest
 
@@ -244,7 +249,8 @@ def main():
         metadata,
         year_batches=normalized_years(),
         election_batches=normalized_elections(),
-        sources_fn=lambda: sorted(client.sources.values(), key=lambda row: row['url'])
+        sources_fn=lambda: sorted(client.sources.values(), key=lambda row: row['url']),
+        people_fn=lambda directory: write_people(directory, client)
     )
     print(f"Publicado localmente: {len(members)} perfis, {sum(row['records'] for row in coverage)} despesas validadas.", flush=True)
 

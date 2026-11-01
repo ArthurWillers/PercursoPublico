@@ -41,7 +41,7 @@ class Client:
             if previous.get('httpStatus') == 404:
                 raise HTTPError(url, 404, 'Not Found (cached)', None, None)
             return body
-        headers = {'User-Agent': 'Parlamentares/1.0 (public financial data)', 'Accept': '*/*'}
+        headers = {'User-Agent': 'PercursoPublico/1.0 (public financial data)', 'Accept': '*/*'}
         if previous and path.exists():
             if previous.get('etag'):
                 headers['If-None-Match'] = previous['etag']

@@ -19,7 +19,7 @@ from pipeline.collect import verify_output
 
 
 def _read_url(url, timeout):
-    request = Request(url, headers={'User-Agent': 'Parlamentares/1.0'})
+    request = Request(url, headers={'User-Agent': 'PercursoPublico/1.0'})
     for attempt in range(4):
         try:
             with urlopen(request, timeout=timeout) as response:

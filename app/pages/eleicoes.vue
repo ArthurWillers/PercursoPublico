@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ElectionCandidate } from '~/types/financial'
+import { divulgaCandUrl, hasDirectElectionLink } from '~/utils/election'
 import { formatElectionOffice } from '~/composables/useElectionData'
 import { brazilianStates, formatMoney, formatPercentage, formatSupplierIdentifier } from '~/utils/financial'
 
@@ -136,11 +136,6 @@ watch([() => ({ ...filters }), candidateSort, partySort, supplierSort], () => {
   expandedSupplierKey.value = null
 })
 
-function divulgaCandUrl(cand: ElectionCandidate) {
-  const ue = cand.municipalityCode || cand.state
-  return `https://divulgacandcontas.tse.jus.br/divulga/#/candidato/${cand.year}/2/${ue}/${cand.sqCandidato}`
-}
-
 function mandateProfileRoute(memberId: string, year: number, supplierKey: string) {
   return {
     path: `/gastos/${memberId.replace(':', '-')}`,
@@ -149,7 +144,7 @@ function mandateProfileRoute(memberId: string, year: number, supplierKey: string
 }
 
 useSeoMeta({
-  title: 'Eleições Gerais e Municipais (TSE) | Parlamentares',
+  title: 'Eleições Gerais e Municipais (TSE)',
   description: 'Consulte receitas de campanha, Fundo Eleitoral (FEFC), Fundo Partidário e fornecedores eleitorais nas eleições gerais (2010–2026) e municipais (2008–2024).'
 })
 </script>
@@ -176,10 +171,10 @@ useSeoMeta({
           Tribunal Superior Eleitoral (TSE) · Eleições Gerais (2010–2026) e Municipais (2008–2024)
         </p>
         <h1 id="page-title">
-          Campanhas, FEFC e<br class="desktop-break"> Fundo Partidário.
+          Candidaturas e contas eleitorais
         </h1>
         <p class="intro-copy">
-          Prestações de contas eleitorais para Deputado Federal, Senador, Prefeito e Vereador, distribuição de fundos públicos por partido e cruzamento de fornecedores por CNPJ com a cota parlamentar.
+          Prestações de contas eleitorais para Presidente, Governador, Deputado Federal, Senador, Prefeito e Vereador, distribuição de fundos públicos por partido e cruzamento de fornecedores por CNPJ com a cota parlamentar.
         </p>
       </div>
       <aside class="scope-note">
@@ -209,7 +204,7 @@ useSeoMeta({
                 :aria-pressed="currentScope === 'geral'"
                 @click="selectScope('geral')"
               >
-                Gerais (Congresso)
+                Gerais
               </button>
               <button
                 type="button"
@@ -226,6 +221,20 @@ useSeoMeta({
               role="group"
               aria-label="Cargo nas eleições gerais"
             >
+              <button
+                type="button"
+                :aria-pressed="filters.office === 'presidente'"
+                @click="filters.office = 'presidente'; filters.state = ''"
+              >
+                Presidente
+              </button>
+              <button
+                type="button"
+                :aria-pressed="filters.office === 'governador'"
+                @click="filters.office = 'governador'"
+              >
+                Governador
+              </button>
               <button
                 type="button"
                 :aria-pressed="filters.office === 'deputado_federal'"
@@ -269,7 +278,7 @@ useSeoMeta({
         <label class="filter-field">
           <span>Ano da eleição</span>
           <select v-model.number="filters.year">
-            <optgroup label="Eleições Gerais (Congresso Nacional)">
+            <optgroup label="Eleições Gerais (Presidência, governos e Congresso)">
               <option
                 v-for="yr in generalElectionYears"
                 :key="yr"
@@ -344,9 +353,12 @@ useSeoMeta({
           class="filter-field filter-collapsible"
           :class="{ 'is-open': mobileFiltersOpen || secondaryFilterCount > 0 }"
         >
-          <span>Estado (UF)</span>
-          <select v-model="filters.state">
-            <option value="">Todos</option>
+          <span>{{ filters.office === 'presidente' ? 'Abrangência' : 'Estado (UF)' }}</span>
+          <select
+            v-model="filters.state"
+            :disabled="filters.office === 'presidente'"
+          >
+            <option value="">{{ filters.office === 'presidente' ? 'Brasil (nacional)' : 'Todos' }}</option>
             <option
               v-for="[code, name] in availableStates"
               :key="code"
@@ -446,6 +458,14 @@ useSeoMeta({
     </div>
 
     <template v-if="!pending && !error && election">
+      <UAlert
+        v-if="election.status === 'collected' && ['presidente', 'governador'].includes(filters.office) && !election.collectedOffices?.includes(filters.office)"
+        title="Cobertura deste cargo ainda não coletada"
+        description="Este arquivo foi gerado antes da ampliação para presidente e governador. Uma nova coleta é necessária; a ausência de candidaturas aqui não significa ausência de dados no TSE."
+        color="warning"
+        variant="subtle"
+        class="election-unavailable-card"
+      />
       <div
         v-if="election.status === 'unavailable'"
         class="suppliers-panel empty-state election-unavailable-card"
@@ -481,7 +501,7 @@ useSeoMeta({
         </div>
       </div>
 
-      <template v-else>
+      <template v-else-if="!['presidente', 'governador'].includes(filters.office) || election.collectedOffices?.includes(filters.office)">
         <section
           id="resumo-eleitoral"
           class="summary"
@@ -490,7 +510,7 @@ useSeoMeta({
           <article class="summary-item">
             <h2>Receitas declaradas</h2>
             <p>{{ summaryTotals.candidacyCount ? formatMoney(summaryTotals.totalRevenue) : '—' }}</p>
-            <span>{{ summaryTotals.candidacyCount.toLocaleString('pt-BR') }} candidaturas · {{ summaryTotals.elected.toLocaleString('pt-BR') }} eleitos</span>
+            <span>{{ summaryTotals.candidacyCount.toLocaleString('pt-BR') }} {{ summaryTotals.candidacyCount === 1 ? 'candidatura' : 'candidaturas' }} · {{ summaryTotals.elected.toLocaleString('pt-BR') }} {{ summaryTotals.elected === 1 ? 'eleito' : 'eleitos' }}</span>
           </article>
           <article class="summary-item">
             <h2>Fundo Eleitoral (FEFC)</h2>
@@ -503,7 +523,7 @@ useSeoMeta({
             <span>{{ summaryTotals.totalRevenue ? `Fundos públicos (FEFC+FP): ${formatPercentage(summaryTotals.publicShare)}` : 'recursos partidários aplicados' }}</span>
           </article>
           <article class="summary-item">
-            <h2>Pessoas físicas e próprios</h2>
+            <h2>Pessoas físicas e recursos próprios</h2>
             <p>{{ summaryTotals.candidacyCount ? formatMoney(summaryTotals.privateAndOwn) : '—' }}</p>
             <span>Despesas contratadas: {{ formatMoney(summaryTotals.totalExpense) }}</span>
           </article>
@@ -517,7 +537,7 @@ useSeoMeta({
         >
           <header>
             <div>
-              <h2>{{ sortedCandidates.length.toLocaleString('pt-BR') }} candidaturas a {{ officeLabel }}</h2>
+              <h2>{{ sortedCandidates.length.toLocaleString('pt-BR') }} {{ sortedCandidates.length === 1 ? 'candidatura' : 'candidaturas' }} a {{ officeLabel }}</h2>
               <span>
                 Eleições {{ currentScope === 'municipal' ? 'Municipais' : 'Gerais' }} {{ filters.year }}
                 <template v-if="filters.municipality"> · {{ filters.municipality }}</template>
@@ -575,9 +595,17 @@ useSeoMeta({
                     <span><strong>Fundo Partidário:</strong> {{ formatMoney(cand.partyFundCents) }}</span>
                     <span><strong>PF / Coletivo:</strong> {{ formatMoney(cand.individualCents) }}</span>
                     <span><strong>Próprios:</strong> {{ formatMoney(cand.ownResourcesCents) }}</span>
+                    <span v-if="cand.otherRevenueCents"><strong>Outras origens:</strong> {{ formatMoney(cand.otherRevenueCents) }}</span>
                   </div>
 
                   <div class="supplier-directory-actions">
+                    <NuxtLink
+                      :to="{ path: '/pessoas', query: { candidatura: cand.id } }"
+                      class="supplier-members-toggle"
+                    ><UIcon
+                      name="i-lucide-user-round-search"
+                      aria-hidden="true"
+                    />Ver pessoa e outras eleições</NuxtLink>
                     <button
                       v-if="cand.topCategories.length"
                       type="button"
@@ -601,7 +629,7 @@ useSeoMeta({
                         name="i-lucide-external-link"
                         aria-hidden="true"
                       />
-                      <span>Ver no DivulgaCandContas (TSE)</span>
+                      <span>{{ hasDirectElectionLink(cand) ? 'Ver candidatura no TSE' : 'Buscar candidatura no TSE' }}</span>
                     </a>
                   </div>
                 </div>
@@ -619,12 +647,12 @@ useSeoMeta({
                 <p class="supplier-members-caption">
                   Principais categorias de despesas contratadas pela campanha (TSE {{ cand.year }}):
                 </p>
-                <ul class="supplier-members-list">
+                <ul class="campaign-category-list">
                   <li
                     v-for="cat in cand.topCategories"
                     :key="cat.category"
                   >
-                    <div class="supplier-member-chip">
+                    <div class="campaign-category">
                       <span>
                         <strong>{{ cat.category }}</strong>
                         <small>{{ cat.count }} {{ cat.count === 1 ? 'lançamento' : 'lançamentos' }}</small>

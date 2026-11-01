@@ -76,7 +76,7 @@ function togglePartyFilter(party: string) {
 function formatPercent(value: number) {
   return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 }).format(value)
 }
-useSeoMeta({ title: 'Gastos da cota parlamentar | Parlamentares', description: 'Consulte despesas oficiais da cota parlamentar de deputados federais e senadores.' })
+useSeoMeta({ title: 'Gastos da cota parlamentar', description: 'Consulte despesas oficiais da cota parlamentar de deputados federais e senadores.' })
 </script>
 
 <template>
@@ -87,6 +87,8 @@ useSeoMeta({ title: 'Gastos da cota parlamentar | Parlamentares', description: '
       :manifest="manifest"
       @retry="retry"
     />
+
+    <PersonSearchEntry />
 
     <section
       class="intro"

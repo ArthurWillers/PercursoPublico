@@ -1,7 +1,7 @@
 export type Chamber = 'deputados' | 'senadores'
 export type ExpensePeriod = 'ano' | 'historico' | 'personalizado' | 'mandato' | 'q1' | 'q2' | 'q3' | 'q4'
 export type ElectionScope = 'geral' | 'municipal'
-export type ElectionOffice = 'deputado_federal' | 'senador' | 'prefeito' | 'vereador'
+export type ElectionOffice = 'deputado_federal' | 'senador' | 'prefeito' | 'vereador' | 'presidente' | 'governador'
 
 export interface Mandate {
   start: string
@@ -197,6 +197,7 @@ export interface ElectionSupplierRow {
 }
 
 export interface ElectionYearData {
+  collectedOffices?: ElectionOffice[]
   year: number
   scope?: ElectionScope
   status: 'collected' | 'unavailable'

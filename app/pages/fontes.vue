@@ -7,7 +7,7 @@ const baseURL = useRuntimeConfig().app.baseURL
 const { data: manifest, error, status, refresh } = useFetch<Manifest>(publicDataUrl('index.json', baseURL), { server: false })
 
 useSeoMeta({
-  title: 'Fontes e metodologia | Parlamentares',
+  title: 'Fontes e metodologia',
   description: 'Fontes oficiais, cobertura coletada, regras de atribuição e limites dos dados financeiros publicados.'
 })
 
@@ -71,7 +71,7 @@ const sources = [
   {
     eyebrow: 'TSE',
     title: 'Contas eleitorais, FP e FEFC',
-    detail: 'As prestações de contas eleitorais identificam despesas contratadas e receitas de campanha (FEFC, Fundo Partidário, pessoas físicas e recursos próprios) para Eleições Gerais (2010–2026: Deputado Federal e Senador) e Municipais (2008–2024: Prefeito e Vereador). Ficam em seção própria (/eleicoes), sem soma aos gastos do mandato.',
+    detail: 'As prestações de contas eleitorais identificam despesas contratadas e receitas de campanha (FEFC, Fundo Partidário, pessoas físicas e recursos próprios) para Eleições Gerais (2010–2026: Deputado Federal e Senador, com suporte a Presidente e Governador conforme a cobertura coletada) e Municipais (2008–2024: Prefeito e Vereador). Ficam em seção própria (/eleicoes), sem soma aos gastos do mandato.',
     coverage: 'Integrado em /eleicoes (2008 a 2026)',
     href: 'https://dadosabertos.tse.jus.br/dataset/prestacao-de-contas-eleitorais',
     link: 'Ver arquivos do TSE'
@@ -92,7 +92,8 @@ const principles = [
   ['Período com cobertura', '“Mandato” usa as datas daquele mandato e só soma registros disponíveis. Uma coleta parcial aparece como parcial, nunca como total.'],
   ['Sem registro não é zero', 'Dado ausente, não individualizado ou coleta incompleta terá estado próprio, sem ser convertido em gasto zero.'],
   ['Origem preservada', 'A categoria e o identificador originais ficam disponíveis. Agregados devem reconciliar com as despesas publicadas.'],
-  ['Contas eleitorais separadas do mandato', 'Candidaturas de eleições gerais (Deputado Federal e Senador) e municipais (Prefeito e Vereador) usam o identificador tse:{ano}:{sq_candidato} e aparecem em /eleicoes. Receitas de FEFC, Fundo Partidário e doações não são somadas às cotas parlamentares, e o cruzamento entre fornecedores de campanha e fornecedores de cota usa exclusivamente CPF/CNPJ de 11 ou 14 dígitos.'],
+  ['Pessoas e históricos eleitorais', 'A busca por pessoa reúne registros ligados exclusivamente por CPF oficial com dígitos verificadores (TSE e Câmara). Nomes servem apenas à busca. CPF ausente ou conflitante mantém registros separados; o cadastro do Senado ainda não tem ligação eleitoral verificável. O histórico cobre somente as candidaturas individuais já processadas, com limitação de vereadores. Cada eleição e cada mandato mantêm valores próprios.'],
+  ['Contas eleitorais separadas do mandato', 'Candidaturas de eleições gerais (Presidente, Governador, Deputado Federal e Senador) e municipais (Prefeito e Vereador) usam o identificador tse:{ano}:{sq_candidato} e aparecem em /eleicoes. Receitas de FEFC, Fundo Partidário e doações não são somadas às cotas parlamentares, e o cruzamento entre fornecedores de campanha e fornecedores de cota usa exclusivamente CPF/CNPJ de 11 ou 14 dígitos.'],
   ['Consulta cadastral auxiliar', 'Se houver CNPJ/CPF publicado, uma consulta cadastral opcional poderá acrescentar contexto. Ela não modifica a despesa nem substitui a fonte oficial.']
 ]
 </script>

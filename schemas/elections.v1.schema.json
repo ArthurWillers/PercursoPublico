@@ -13,6 +13,7 @@
     "suppliers"
   ],
   "properties": {
+    "collectedOffices": { "type": "array", "uniqueItems": true, "items": { "enum": ["deputado_federal", "senador", "prefeito", "vereador", "presidente", "governador"] } },
     "year": {
       "type": "integer",
       "enum": [2008, 2010, 2012, 2014, 2016, 2018, 2020, 2022, 2024, 2026]
@@ -82,7 +83,7 @@
             "enum": [2008, 2010, 2012, 2014, 2016, 2018, 2020, 2022, 2024, 2026]
           },
           "office": {
-            "enum": ["deputado_federal", "senador", "prefeito", "vereador"]
+            "enum": ["deputado_federal", "senador", "prefeito", "vereador", "presidente", "governador"]
           },
           "name": { "type": "string", "minLength": 1 },
           "ballotName": { "type": "string", "minLength": 1 },
@@ -179,7 +180,7 @@
         ],
         "properties": {
           "party": { "type": "string", "minLength": 1 },
-          "office": { "enum": ["deputado_federal", "senador", "prefeito", "vereador"] },
+          "office": { "enum": ["deputado_federal", "senador", "prefeito", "vereador", "presidente", "governador"] },
           "year": { "type": "integer", "enum": [2008, 2010, 2012, 2014, 2016, 2018, 2020, 2022, 2024, 2026] },
           "candidacyCount": { "type": "integer", "minimum": 1 },
           "electedCount": { "type": "integer", "minimum": 0 },
@@ -248,7 +249,7 @@
               "candidacyCount": { "type": "integer", "minimum": 1 },
               "offices": {
                 "type": "array",
-                "items": { "enum": ["deputado_federal", "senador", "prefeito", "vereador"] }
+                "items": { "enum": ["deputado_federal", "senador", "prefeito", "vereador", "presidente", "governador"] }
               },
               "states": {
                 "type": "array",
@@ -269,7 +270,7 @@
                     "party": { "type": "string" },
                     "state": { "type": "string" },
                     "municipality": { "type": ["string", "null"] },
-                    "office": { "enum": ["deputado_federal", "senador", "prefeito", "vereador"] },
+                    "office": { "enum": ["deputado_federal", "senador", "prefeito", "vereador", "presidente", "governador"] },
                     "cents": { "type": "integer" },
                     "count": { "type": "integer", "minimum": 1 }
                   },

@@ -70,7 +70,14 @@ def validate_election(election):
     scope = election.get('scope', expected_scope)
     if scope != expected_scope:
         raise ValueError(f'Escopo eleitoral inválido para {year}: {scope}')
-    allowed_offices = ('prefeito', 'vereador') if scope == 'municipal' else ('deputado_federal', 'senador')
+    allowed_offices = ('prefeito', 'vereador') if scope == 'municipal' else ('deputado_federal', 'senador', 'presidente', 'governador')
+    collected_offices = election.get('collectedOffices')
+    if collected_offices is not None and (
+        not isinstance(collected_offices, list)
+        or len(collected_offices) != len(set(collected_offices))
+        or any(office not in allowed_offices for office in collected_offices)
+    ):
+        raise ValueError('Cobertura de cargos eleitorais inválida')
     status = election.get('status')
     if status not in ('collected', 'unavailable'):
         raise ValueError('Status eleitoral inválido')
@@ -105,6 +112,8 @@ def validate_election(election):
         seen_candidates.add(expected_id)
         if cand.get('office') not in allowed_offices:
             raise ValueError(f'Cargo eleitoral fora do escopo de {year}: {cand.get("office")}')
+        if collected_offices is not None and cand['office'] not in collected_offices:
+            raise ValueError('Candidatura fora da cobertura declarada de cargos')
         if scope == 'municipal' and not cand.get('municipality'):
             raise ValueError(f'Candidatura municipal sem município identificado: {expected_id}')
         for field in (

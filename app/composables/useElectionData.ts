@@ -34,13 +34,15 @@ export function isValidOfficeForYear(office: string | undefined, year: number): 
   if (electionScopeForYear(year) === 'municipal') {
     return office === 'prefeito' || office === 'vereador'
   }
-  return office === 'deputado_federal' || office === 'senador'
+  return office === 'deputado_federal' || office === 'senador' || office === 'presidente' || office === 'governador'
 }
 
 export function formatElectionOffice(office: ElectionOffice): string {
   switch (office) {
     case 'deputado_federal': return 'Deputado Federal'
     case 'senador': return 'Senador'
+    case 'presidente': return 'Presidente'
+    case 'governador': return 'Governador'
     case 'prefeito': return 'Prefeito'
     case 'vereador': return 'Vereador'
   }
@@ -140,7 +142,7 @@ export function useElectionData() {
         office: validOffice,
         tab: tab === 'partidos' || tab === 'fornecedores' ? tab : 'candidaturas',
         result: result === 'eleitos' || result === 'suplentes' || result === 'nao-eleitos' ? result : 'todos',
-        state: readQueryValue(stateVal) ?? '',
+        state: validOffice === 'presidente' ? '' : readQueryValue(stateVal) ?? '',
         municipality: isMun ? (readQueryValue(munVal) ?? '') : '',
         party: readQueryValue(partyVal) ?? '',
         search: readQueryValue(searchVal) ?? '',

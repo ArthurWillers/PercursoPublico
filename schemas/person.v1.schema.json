@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Histórico de pessoa v1",
+  "type": "object",
+  "required": ["id", "name", "aliases", "identityBasis", "members", "candidacies"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^person:[a-f0-9]{32}$" },
+    "name": { "type": "string", "minLength": 1 },
+    "aliases": { "type": "array", "items": { "type": "string" } },
+    "identityBasis": { "enum": ["official-cpf", "source-record"] },
+    "members": { "type": "array", "items": { "$ref": "members.v1.schema.json#/items" } },
+    "candidacies": { "type": "array", "items": { "$ref": "elections.v1.schema.json#/properties/candidates/items" } }
+  },
+  "additionalProperties": false
+}

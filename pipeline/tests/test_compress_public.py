@@ -33,8 +33,11 @@ class CompressPublicTests(unittest.TestCase):
             site = Path(temporary_directory)
             data = site / 'data'
             (data / 'members').mkdir(parents=True)
+            (data / 'people').mkdir()
             (data / 'expenses' / 'camara:123').mkdir(parents=True)
             source_files = {
+                'people.json': b'{"schemaVersion":"1.0.0","people":[]}',
+                'people/person-1.json': b'{"id":"person-1"}',
                 'summary-2026.json': b'[{"memberId":"camara:123","cents":100}]',
                 'members/camara:123.json': b'{"id":"camara:123"}',
                 'expenses/camara:123/2026.json': b'[{"id":"doc:1","cents":100}]',

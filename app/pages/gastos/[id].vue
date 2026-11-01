@@ -206,7 +206,7 @@ function monthLabel(value: string) {
 }
 
 useSeoMeta({
-  title: () => member.value ? `${member.value.name} | Parlamentares` : 'Parlamentar | Parlamentares',
+  title: () => member.value ? `${member.value.name}` : 'Parlamentar',
   description: () => member.value ? `Despesas oficiais da cota parlamentar de ${member.value.name}.` : 'Consulta individual de despesas parlamentares.'
 })
 </script>
@@ -242,9 +242,12 @@ useSeoMeta({
           {{ member.chamber === 'deputados' ? 'Câmara dos Deputados' : 'Senado Federal' }} · {{ member.state }}
           <span class="profile-status-pill">{{ member.current ? 'Em exercício' : 'Histórico / Suplência' }}</span>
         </p>
-        <h1>{{ member.name }}</h1>
+        <h1 id="page-title">
+          {{ member.name }}
+        </h1>
         <p>{{ member.current ? 'Filiação atual:' : 'Filiação no cadastro:' }} <strong>{{ member.party }}</strong> <span aria-hidden="true">·</span> {{ member.state }}</p>
         <p class="profile-links">
+          <NuxtLink :to="{ path: '/pessoas', query: { mandato: member.id } }">Ver pessoa e histórico de eleições</NuxtLink>
           <a
             v-if="officialProfileUrl"
             :href="officialProfileUrl"
@@ -305,6 +308,17 @@ useSeoMeta({
       </div>
     </header>
 
+    <nav
+      class="profile-section-nav"
+      aria-label="Neste perfil"
+    >
+      <a href="#overview-section">Visão geral</a>
+      <a href="#profile-categories-title">Categorias e evolução</a>
+      <a href="#suppliers-section">Fornecedores</a>
+      <a href="#expenses-section">Documentos e despesas</a>
+      <a href="#other-disclosures-title">Cobertura e outros recursos</a>
+    </nav>
+
     <section
       v-if="member.affiliations?.length || member.mandate"
       class="profile-history-strip"
@@ -350,6 +364,7 @@ useSeoMeta({
 
     <template v-if="!pending && !error">
       <section
+        id="overview-section"
         class="profile-total"
         aria-label="Resumo da cota parlamentar"
       >
@@ -384,6 +399,21 @@ useSeoMeta({
         </div>
 
         <p>A Cota para o Exercício da Atividade Parlamentar cobre itens definidos por cada Casa e não representa todo o custo do mandato. Comparativos consideram apenas valores publicados na mesma Casa e período.</p>
+      </section>
+
+      <section
+        class="profile-overview"
+        aria-label="Visão geral do parlamentar no período"
+      >
+        <div>
+          <h2>O período em perspectiva</h2>
+          <p>{{ periodLabel }}. A consulta abaixo reúne os registros publicados da cota deste parlamentar.</p>
+        </div>
+        <dl>
+          <div><dt>Maior categoria em valor</dt><dd>{{ categories[0]?.name ?? 'Sem registros no recorte' }}</dd></div>
+          <div><dt>Competências com registros</dt><dd>{{ new Set(expenses.map(item => `${item.year}-${item.month}`)).size }} meses</dd></div>
+          <div><dt>Cobertura além da cota</dt><dd>{{ otherResources.length ? 'Recursos anuais disponíveis separadamente' : 'Consulte os limites de cobertura abaixo' }}</dd></div>
+        </dl>
       </section>
 
       <section class="profile-content-grid">
@@ -509,6 +539,7 @@ useSeoMeta({
       </section>
 
       <section
+        id="suppliers-section"
         class="suppliers-panel"
         aria-labelledby="suppliers-title"
       >

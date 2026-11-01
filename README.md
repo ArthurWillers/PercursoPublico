@@ -1,8 +1,12 @@
-# Parlamentares
+# Percurso Público
 
-Consulta estática de informações financeiras públicas de deputados federais e senadores, em português, com filtros compartilháveis na URL.
+**Pessoas, mandatos e eleições.**
+
+Consulta pública centrada em pessoas, reunindo candidaturas de diferentes eleições e informações financeiras de mandatos de deputados federais e senadores. Interface em português, inteiramente estática, com filtros compartilháveis na URL.
 
 ## Implementado
+
+- Consulta por pessoa em `/pessoas`: busca por nomes civis e de urna, filtros por cargo/UF e janela compartilhável por URL com mandatos e candidaturas de diferentes eleições. Cada eleição mantém seus próprios valores; o acesso às despesas do mandato permanece na consulta individual. Cadastro de CNPJ abre em modal, sem expandir células de tabelas.
 
 - Coleta real de todos os registros individuais publicados nos arquivos CEAP da Câmara e na API CEAPS do Senado, de 2008 até o ano corrente por padrão.
 - Cadastros atuais e perfis de parlamentares identificados nas despesas do período, inclusive suplentes e ex-parlamentares. O cadastro não se limita aos atuais 513/81 assentos.
@@ -12,14 +16,17 @@ Consulta estática de informações financeiras públicas de deputados federais 
 - Visão geral, rankings por Casa/ano/período e partido histórico, busca individual, índice global de fornecedores por CPF/CNPJ entre parlamentares, categorias originais e despesas paginadas com documento/fonte, glosas e detalhamento.
 - Consulta cadastral opcional de CNPJ no navegador sob ação explícita do usuário (via BrasilAPI / Receita Federal), identificada como enriquecimento de terceiro e sem alterar o dado oficial.
 - Recursos fora da cota do Senado publicados por código parlamentar em totais anuais separados: diárias, passagens e demais categorias retornadas pela fonte. Não são somados à cota nem rateados por mês, trimestre ou mandato.
-- Dados eleitorais do TSE em seção própria (`/eleicoes`) para Eleições Gerais (2010, 2014, 2018, 2022, 2026 — Deputado Federal e Senador) e Eleições Municipais (2008, 2012, 2016, 2020, 2024 — Prefeito e Vereador, com filtro por município): receitas por origem (FEFC, Fundo Partidário, doações de pessoas físicas, recursos próprios), despesas contratadas, resultado eleitoral, resumo partidário e cruzamento por CPF/CNPJ validado entre fornecedores de campanha e fornecedores da cota parlamentar, mantendo os valores de campanha e mandato estritamente separados.
-- Dados eleitorais do TSE em seção própria (`/eleicoes`) para Eleições Gerais (2010, 2014, 2018, 2022, 2026 — Deputado Federal e Senador) e Eleições Municipais (2008, 2012, 2016, 2020, 2024 — Prefeito e Vereador, com filtro por município): receitas por origem (FEFC, Fundo Partidário, doações de pessoas físicas, recursos próprios), despesas contratadas, resultado eleitoral, resumo partidário e cruzamento por CPF/CNPJ validado entre fornecedores de campanha e fornecedores da cota parlamentar, mantendo os valores de campanha e mandato estritamente separados.
+- Dados eleitorais do TSE em seção própria (`/eleicoes`) para Eleições Gerais (2010, 2014, 2018, 2022, 2026 — Deputado Federal e Senador; Presidente e Governador conforme a cobertura declarada no arquivo) e Eleições Municipais (2008, 2012, 2016, 2020, 2024 — Prefeito e Vereador, com filtro por município): receitas por origem (FEFC, Fundo Partidário, doações de pessoas físicas, recursos próprios), despesas contratadas, resultado eleitoral, resumo partidário e cruzamento por CPF/CNPJ validado entre fornecedores de campanha e fornecedores da cota parlamentar, mantendo os valores de campanha e mandato estritamente separados.
 - Contratos JSON versionados, valores em centavos inteiros, auditoria de fontes/horários/checksums e reconciliação de agregados com detalhes.
 - Pipeline Python sem dependências externas; testes offline; GitHub Actions coleta, valida, compacta, gera e publica automaticamente no GitHub Pages duas vezes por mês.
 
 **Ainda não integrado:** remuneração/subsídio, outros recursos da Câmara, assistência à saúde e prestação anual de contas partidárias do TSE. Não foi validada uma ligação por identificador entre folhas remuneratórias e os perfis. Não inferimos pagamentos pelo salário tabelado nem juntamos folhas por nome. Valores ausentes ou não individualizados não são zero.
 
 Não há publicação Cloudflare nem analytics configurados. Proposições, votações e autenticação estão fora do escopo.
+
+A interface oferece navegação com seção ativa, atalhos dentro do perfil individual e visão geral do parlamentar no período. As categorias de campanha têm layout próprio, sem herdar a grade de fornecedores. Links diretos do DivulgaCandContas usam somente pleitos verificados (2022 e 2026); nos demais anos, a interface oferece a busca no portal oficial.
+
+Presidente e governador foram coletados e validados localmente para 2022 e 2026. Para ampliar os arquivos históricos, execute uma nova coleta: o cache eleitoral mudou para `v3-executivo` para não reutilizar pacotes limitados ao Congresso. `collectedOffices` declara os cargos processados, inclusive quando não há registros. Arquivos anteriores continuam legíveis e a interface informa a cobertura pendente desses cargos em vez de exibir zero.
 
 ## Desenvolvimento
 
@@ -40,10 +47,13 @@ python -m pipeline.collect --start-year 2008
 python -m pipeline.collect --review-history # força revisão completa antes de 365 dias
 python -m pipeline.collect --offline     # reprocessa o cache completo, sem rede
 python -m pipeline.collect --resume      # desenvolvimento: cache existente + URLs faltantes
+python -m pipeline.refresh_elections --year 2022 --year 2026 # atualiza apenas esses pleitos
 pnpm data:test
 pnpm data:validate
 pnpm check                              # lint, tipos, integridade e generate
 ```
+
+`pipeline.refresh_elections` reutiliza os arquivos imutáveis do mandato, atualiza os pleitos indicados e seus metadados/checksums em uma pasta temporária e valida toda a publicação antes de substituir o snapshot. Uma falha ou a indisponibilidade de um pleito antes coletado preserva a versão anterior. Aceita `--offline` para reprocessar os novos caches eleitorais sem rede.
 
 `--offline`/`--resume` preservam o horário efetivo de cada resposta no manifesto e identificam a publicação como processada com cache. Não simulam uma nova coleta. Na coleta normal, o ano corrente e o anterior são revalidados a cada execução, com ETag/Last-Modified quando disponíveis. Anos anteriores e cadastros de ex-parlamentares são reutilizados por até 365 dias; depois são revalidados. As respostas reutilizadas preservam `fetchedAt` e têm `cacheReused: true` no manifesto. O `generatedAt` é o horário do processamento, não uma nova consulta de todas as fontes. A política aparece em `collectionPolicy` e cada Casa/ano publica seu próprio horário de coleta. `--review-history` força a revisão dos anos antigos; também está disponível como opção na execução manual dos workflows. Erros transitórios recebem tentativas limitadas; um erro em fonte obrigatória interrompe o processamento.
 
@@ -58,14 +68,21 @@ Na coleta, falhas de conexão, respostas incompletas e HTTP 408, 429, 500, 502, 
 - `members/{Casa:id}.json`: perfil, histórico e recursos anuais separados quando disponíveis.
 - `summary-{ano}.json`: agregados por parlamentar, competência, partido histórico, categoria e elegibilidade ao mandato.
 - `suppliers-{ano}.json`: agregados anuais de fornecedores identificados por CPF/CNPJ e parlamentar, reconciliados com os detalhes e mantendo sem identificação separados.
-- `elections-{ano}.json`: candidaturas das Eleições Gerais (Deputado Federal e Senador) e Municipais (Prefeito e Vereador) do TSE, receitas por origem (FEFC, Fundo Partidário, pessoas físicas, recursos próprios), despesas contratadas, agregados partidários e fornecedores de campanha.
-- `elections-{ano}.json`: candidaturas das Eleições Gerais (Deputado Federal e Senador) e Municipais (Prefeito e Vereador) do TSE, receitas por origem (FEFC, Fundo Partidário, pessoas físicas, recursos próprios), despesas contratadas, agregados partidários e fornecedores de campanha.
+- `elections-{ano}.json`: candidaturas das Eleições Gerais (Presidente, Governador, Deputado Federal e Senador) e Municipais (Prefeito e Vereador) do TSE, receitas por origem (FEFC, Fundo Partidário, pessoas físicas, recursos próprios), despesas contratadas, agregados partidários e fornecedores de campanha.
 - `expenses/{Casa:id}/{ano}.json`: detalhes normalizados. Arquivo vazio significa nenhuma linha publicada para esse cadastro/ano na fonte coletada, não comprovação de gasto zero.
 - `manifest.json`: versão do schema, cobertura, URLs e horários de coleta ISO 8601 com fuso, checksums de entradas e arquivos publicados e IDs das rotas.
 
 Na pasta publicada pelo GitHub Pages, os resumos, perfis detalhados e arquivos de despesas viram `.json.gz`; a interface os descompacta no navegador. Isso mantém a publicação abaixo do limite de 1 GB. Os checksums do manifesto publicado correspondem aos arquivos compactados.
 
 Contratos em `schemas/`. Os coletores vivem em `pipeline/sources/`, regras exatas em `pipeline/normalize/`, agregação em `pipeline/aggregate/` e invariantes em `pipeline/validate/`. O pipeline primeiro gera uma pasta temporária, valida os arquivos escritos e só então substitui a versão anterior.
+
+## Pessoas e vínculos entre eleições
+
+`people.json` é o índice de busca; `people/{id}.json` traz os registros individuais carregados ao abrir a janela. Contratos em `schemas/people.v1.schema.json` e `schemas/person.v1.schema.json`. A busca usa nomes e aliases, mas a união de registros usa exclusivamente o CPF publicado no cadastro TSE (`consulta_cand`) e no detalhe oficial da Câmara, com verificação dos dígitos. O ID `person:` deriva de SHA-256 com namespace; o CPF usado na junção não é publicado nesses arquivos. Isso não é uma garantia de anonimização.
+
+CPF ausente, mascarado, inválido ou conflitante impede a união; o registro recebe identidade própria de sua fonte. Homônimos permanecem separados. Não há ligação automática entre o cadastro do Senado e as candidaturas: os endpoints integrados do Senado não oferecem CPF compatível. Os nomes nunca são chave de junção. Vínculos sem suporte permanecem explícitos na interface. A cobertura descreve CPFs conflitantes nos cadastros históricos, que não são usados para unir registros. Isso também significa que uma candidatura ausente não comprova que a pessoa não participou daquela eleição. O índice só cobre as candidaturas individuais já publicadas, inclusive a limitação existente de vereadores.
+
+A coleta completa constrói o índice antes de publicar. Para acrescentá-lo a um snapshot existente sem reprocessar as despesas: `python -m pipeline.refresh_elections --people`. A atualização eleitoral reconstrói o índice existente para evitar referências desatualizadas. Falhas preservam a edição anterior. A validação reconcilia todos os cadastros e candidaturas, sem duplicação entre pessoas, e compara os valores de cada candidatura com o arquivo eleitoral de origem.
 
 ## Metodologia
 

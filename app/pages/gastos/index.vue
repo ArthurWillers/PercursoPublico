@@ -87,7 +87,7 @@ function toggleSupplierMembers(key: string) {
 }
 
 useSeoMeta({
-  title: () => viewMode.value === 'fornecedores' ? 'Fornecedores da cota | Parlamentares' : 'Parlamentares | Gastos da cota',
+  title: () => viewMode.value === 'fornecedores' ? 'Fornecedores da cota' : 'Parlamentares — despesas da cota',
   description: 'Busque perfis, fornecedores por CPF/CNPJ e consulte despesas oficiais de deputados federais e senadores.'
 })
 </script>
@@ -115,7 +115,7 @@ useSeoMeta({
             {{ viewMode === 'fornecedores' ? 'Fornecedores' : 'Parlamentares' }}
           </h1>
           <p v-if="viewMode === 'parlamentares'">
-            Compare os valores publicados e abra um perfil para ver categorias, fornecedores e cobertura.
+            Busque pelo nome e abra a visão geral do parlamentar: despesas, evolução, fornecedores e documentos no período escolhido.
           </p>
           <p v-else>
             Consulte empresas e prestadores que receberam recursos da cota parlamentar e veja quais parlamentares contrataram cada CPF/CNPJ.
@@ -355,6 +355,7 @@ useSeoMeta({
             />
             <span>
               <strong>{{ member.name }}</strong>
+              <span class="profile-open-label">Ver visão geral</span>
               <small>{{ member.party }} · {{ member.state }}{{ filters.status === 'todos' ? member.current ? ' · Em exercício' : ' · Fora de exercício na coleta' : '' }}</small>
             </span>
           </NuxtLink>

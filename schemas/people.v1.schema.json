@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Índice de pessoas v1",
+  "type": "object",
+  "required": ["schemaVersion", "coverage", "people"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "coverage": { "type": "array", "items": { "type": "object", "required": ["year", "status", "linkedCandidacies"] } },
+    "people": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "aliases", "memberIds", "candidateIds", "years", "offices", "states", "candidacyCount", "photoUrl", "current"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^person:[a-f0-9]{32}$" },
+          "name": { "type": "string", "minLength": 1 },
+          "aliases": { "type": "array", "items": { "type": "string" } },
+          "memberIds": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^(camara|senado):[0-9]+$" } },
+          "candidateIds": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^tse:[0-9]{4}:[0-9]+$" } },
+          "years": { "type": "array", "uniqueItems": true, "items": { "type": "integer" } },
+          "offices": { "type": "array", "items": { "type": "string" } },
+          "states": { "type": "array", "items": { "type": "string" } },
+          "candidacyCount": { "type": "integer", "minimum": 0 },
+          "photoUrl": { "type": ["string", "null"] },
+          "current": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}
