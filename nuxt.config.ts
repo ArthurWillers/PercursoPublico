@@ -1,7 +1,28 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
-import manifest from './public/data/manifest.json'
+import manifest from './schemas/manifest.empty.json' with { type: 'json' }
 
-const nodeEnvironment = globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } }
+interface ManifestReference {
+  profileIds?: string[]
+}
+
+const nodeEnvironment = globalThis as typeof globalThis & {
+  process?: {
+    env?: Record<string, string | undefined>
+  }
+  require?: (path: string) => ManifestReference
+}
+
+function resolveProfileIds(): string[] {
+  try {
+    const loaded = nodeEnvironment.require?.('./public/data/manifest.json')
+    if (loaded && Array.isArray(loaded.profileIds)) {
+      return loaded.profileIds
+    }
+  } catch {
+    // Arquivo ainda não gerado ou em ambiente sem dados
+  }
+  return manifest.profileIds || []
+}
 
 export default defineNuxtConfig({
   modules: [
@@ -28,7 +49,7 @@ export default defineNuxtConfig({
           '/gastos',
           '/eleicoes',
           '/fontes',
-          ...manifest.profileIds.map(id => `/gastos/${id.replace(':', '-')}`)
+          ...resolveProfileIds().map(id => `/gastos/${id.replace(':', '-')}`)
         ]
       }
     }
