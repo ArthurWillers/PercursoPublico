@@ -71,9 +71,9 @@ const sources = [
   {
     eyebrow: 'TSE',
     title: 'Contas eleitorais, FP e FEFC',
-    detail: 'As prestações de contas eleitorais identificam despesas e recursos de campanha, incluindo Fundo Partidário e FEFC. A relação com uma candidatura e o ano eleitoral precisam permanecer explícitos; campanha não é gasto do mandato parlamentar.',
-    coverage: 'Arquivos por eleição',
-    href: 'https://dadosabertos.tse.jus.br/dataset/380e5337-a918-4013-a987-b92920527087/resource/0ab5db94-6aeb-4d1b-b214-e6f9cb5ca712',
+    detail: 'As prestações de contas eleitorais identificam despesas contratadas e receitas de campanha (FEFC, Fundo Partidário, pessoas físicas e recursos próprios) para Eleições Gerais (2010–2026: Deputado Federal e Senador) e Municipais (2008–2024: Prefeito e Vereador). Ficam em seção própria (/eleicoes), sem soma aos gastos do mandato.',
+    coverage: 'Integrado em /eleicoes (2008 a 2026)',
+    href: 'https://dadosabertos.tse.jus.br/dataset/prestacao-de-contas-eleitorais',
     link: 'Ver arquivos do TSE'
   }
 ]
@@ -92,6 +92,7 @@ const principles = [
   ['Período com cobertura', '“Mandato” usa as datas daquele mandato e só soma registros disponíveis. Uma coleta parcial aparece como parcial, nunca como total.'],
   ['Sem registro não é zero', 'Dado ausente, não individualizado ou coleta incompleta terá estado próprio, sem ser convertido em gasto zero.'],
   ['Origem preservada', 'A categoria e o identificador originais ficam disponíveis. Agregados devem reconciliar com as despesas publicadas.'],
+  ['Contas eleitorais separadas do mandato', 'Candidaturas de eleições gerais (Deputado Federal e Senador) e municipais (Prefeito e Vereador) usam o identificador tse:{ano}:{sq_candidato} e aparecem em /eleicoes. Receitas de FEFC, Fundo Partidário e doações não são somadas às cotas parlamentares, e o cruzamento entre fornecedores de campanha e fornecedores de cota usa exclusivamente CPF/CNPJ de 11 ou 14 dígitos.'],
   ['Consulta cadastral auxiliar', 'Se houver CNPJ/CPF publicado, uma consulta cadastral opcional poderá acrescentar contexto. Ela não modifica a despesa nem substitui a fonte oficial.']
 ]
 </script>
@@ -107,8 +108,8 @@ const principles = [
         Transparência também é mostrar limites
       </p>
       <h1>De onde vem cada número.</h1>
-      <p>As despesas de cotas vêm dos arquivos anuais CEAP da Câmara e da API CEAPS do Senado. Perfis, fotos e históricos são oficiais. Recursos fora da cota do Senado aparecem em totais anuais separados. Remuneração, outros benefícios da Câmara e TSE ainda não estão integrados.</p>
-      <span class="integration-status"><i aria-hidden="true" /> Cotas integradas · demais conjuntos com cobertura própria</span>
+      <p>As despesas de cotas vêm dos arquivos anuais CEAP da Câmara e da API CEAPS do Senado. Perfis, fotos e históricos são oficiais. Recursos fora da cota do Senado aparecem em totais anuais separados, e as contas eleitorais do TSE ficam isoladas em seção própria. Remuneração, outros benefícios da Câmara e contas partidárias anuais ainda não estão integrados.</p>
+      <span class="integration-status"><i aria-hidden="true" /> Cotas e eleições integradas · demais conjuntos com cobertura própria</span>
     </header>
 
     <DataStatus
@@ -153,13 +154,31 @@ const principles = [
               v-for="item in manifest.coverage"
               :key="`${item.chamber}:${item.year}`"
             >
-              <td>
+              <td data-label="Casa / ano">
                 <a
                   :href="item.sourceUrl"
                   target="_blank"
                   rel="noreferrer"
                 >{{ item.chamber === 'deputados' ? 'Câmara' : 'Senado' }} / {{ item.year }}</a>
-              </td><td>{{ item.records.toLocaleString('pt-BR') }}</td><td>{{ formatMoney(item.cents) }}</td><td>{{ item.latestMonth ? `${item.latestMonth}/${item.year}` : 'Sem registros' }}</td><td>{{ item.fetchedAt ? formatCollectionDate(item.fetchedAt) : 'Ver manifesto' }}</td><td>{{ item.unattributed.records }} registros · {{ formatMoney(item.unattributed.cents) }}</td><td>{{ item.ongoing ? 'Ano parcial' : 'Ano encerrado, sujeito a correções' }}</td>
+              </td>
+              <td data-label="Registros individuais">
+                {{ item.records.toLocaleString('pt-BR') }}
+              </td>
+              <td data-label="Valor individual">
+                {{ formatMoney(item.cents) }}
+              </td>
+              <td data-label="Último mês">
+                {{ item.latestMonth ? `${item.latestMonth}/${item.year}` : 'Sem registros' }}
+              </td>
+              <td data-label="Fonte consultada em">
+                {{ item.fetchedAt ? formatCollectionDate(item.fetchedAt) : 'Ver manifesto' }}
+              </td>
+              <td data-label="Sem parlamentar">
+                {{ item.unattributed.records }} registros · {{ formatMoney(item.unattributed.cents) }}
+              </td>
+              <td data-label="Situação">
+                {{ item.ongoing ? 'Ano parcial' : 'Ano encerrado, sujeito a correções' }}
+              </td>
             </tr>
           </tbody>
         </table>

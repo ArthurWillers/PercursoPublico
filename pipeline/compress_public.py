@@ -21,7 +21,7 @@ def compress_public_data(directory=DATA_DIRECTORY, source_directory=None):
         original = (source_directory / relative).read_bytes()
         if hashlib.sha256(original).hexdigest() != expected:
             raise ValueError(f'Arquivo mudou antes da compactação: {relative}')
-        compress = path.parts[0] in ('members', 'expenses') or path.name.startswith('summary-')
+        compress = path.parts[0] in ('members', 'expenses') or path.name.startswith(('summary-', 'suppliers-', 'elections-'))
         target = directory / (relative + '.gz' if compress else relative)
         target.parent.mkdir(parents=True, exist_ok=True)
         content = gzip.compress(original, compresslevel=9, mtime=0) if compress else original

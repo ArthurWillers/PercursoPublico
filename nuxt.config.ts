@@ -19,13 +19,14 @@ export default defineNuxtConfig({
     nitro: {
       // Arquivos grandes são compactados diretamente pelo pipeline após generate.
       // Evita duplicar mais de 6 GB de JSON bruto no disco do Actions.
-      ignore: ['**/data/expenses/**', '**/data/members/**', '**/data/summary-*.json'],
+      ignore: ['**/data/expenses/**', '**/data/members/**', '**/data/summary-*.json', '**/data/suppliers-*.json', '**/data/elections-*.json'],
       prerender: {
         crawlLinks: false,
         concurrency: 4,
         routes: [
           '/',
           '/gastos',
+          '/eleicoes',
           '/fontes',
           ...manifest.profileIds.map(id => `/gastos/${id.replace(':', '-')}`)
         ]

@@ -26,3 +26,27 @@ export function formatDate(value: string | null | undefined) {
 export function formatPercentage(value: number) {
   return `${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 }).format(value)}%`
 }
+export function cleanSupplierDigits(value: string | null | undefined) {
+  const digits = (value ?? '').replace(/\D/g, '')
+  return (digits.length === 11 || digits.length === 14) && Number(digits) > 7 ? digits : null
+}
+export function isValidCnpj(value: string | null | undefined) {
+  const digits = cleanSupplierDigits(value)
+  return digits?.length === 14 ? digits : null
+}
+export function formatSupplierIdentifier(value: string | null | undefined) {
+  const digits = cleanSupplierDigits(value)
+  if (!digits) return value || 'Não informado pela fonte'
+  if (digits.length === 14) {
+    return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`
+  }
+  return value || digits
+}
+export function calculateMedianCents(values: number[]) {
+  if (!values.length) return 0
+  const sorted = [...values].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 0
+    ? Math.round(((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2)
+    : (sorted[mid] ?? 0)
+}

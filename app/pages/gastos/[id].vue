@@ -1,16 +1,23 @@
 <script setup lang="ts">
-import { categoryColors, formatMoney, formatCompactMoney, formatDate, formatPercentage, months } from '~/utils/financial'
+import { categoryColors, formatMoney, formatCompactMoney, formatDate, formatPercentage, formatSupplierIdentifier, months } from '~/utils/financial'
 import { officialMemberProfileUrl } from '~/utils/member'
 import type { Expense } from '~/types/financial'
 
-const { manifest, years, filters, member, pending, error, retry, expenses, periodLabel, totalCents } = useParliamentarianData()
+const route = useRoute()
+const { manifest, years, filters, member, pending, error, retry, expenses, periodLabel, totalCents, chamberBenchmark } = useParliamentarianData()
 const officialProfileUrl = computed(() => member.value ? officialMemberProfileUrl(member.value) : null)
+
 const categories = computed(() => {
   const totals = new Map<string, number>()
   for (const expense of expenses.value) totals.set(expense.category, (totals.get(expense.category) ?? 0) + expense.cents)
-  return [...totals].map(([name, cents], index) => ({ name, cents, color: categoryColors[index % categoryColors.length],
-    share: totalCents.value ? Number((cents / totalCents.value * 100).toFixed(1)) : 0 })).sort((a, b) => b.cents - a.cents)
+  return [...totals].map(([name, cents], index) => ({
+    name,
+    cents,
+    color: categoryColors[index % categoryColors.length],
+    share: totalCents.value ? Number((cents / totalCents.value * 100).toFixed(1)) : 0
+  })).sort((a, b) => b.cents - a.cents)
 })
+
 const monthlyAmounts = computed(() => {
   if (filters.period === 'historico') {
     return years.value.map((year) => {
@@ -28,50 +35,180 @@ const monthlyAmounts = computed(() => {
   }
   return [...totals].sort(([a], [b]) => a.localeCompare(b)).map(([month, item]) => ({ month, ...item }))
 })
+
 const monthlyMaximum = computed(() => Math.max(...monthlyAmounts.value.map(row => Math.abs(row.cents)), 1))
+
+const totalDisallowedCents = computed(() =>
+  expenses.value.reduce((sum, row) => sum + (row.disallowedCents && row.disallowedCents > 0 ? row.disallowedCents : 0), 0)
+)
+
 const suppliers = computed(() => {
-  const groups = new Map<string, { name: string, identifier: string | null, cents: number, monthly: Map<string, number> }>()
+  const groups = new Map<string, { name: string, identifier: string | null, cents: number, count: number, monthly: Map<string, number> }>()
   for (const expense of expenses.value) {
     const digits = (expense.supplierId ?? '').replace(/\D/g, '')
     const key = [11, 14].includes(digits.length) && Number(digits) > 7 ? digits : `record:${expense.id}`
-    const item = groups.get(key) ?? { name: expense.supplier || 'Fornecedor não informado', identifier: expense.supplierId, cents: 0, monthly: new Map<string, number>() }
+    const item = groups.get(key) ?? {
+      name: expense.supplier || 'Fornecedor não informado',
+      identifier: expense.supplierId,
+      cents: 0,
+      count: 0,
+      monthly: new Map<string, number>()
+    }
     const month = `${expense.year}-${String(expense.month).padStart(2, '0')}`
     item.cents += expense.cents
+    item.count++
     item.monthly.set(month, (item.monthly.get(month) ?? 0) + expense.cents)
     groups.set(key, item)
   }
   return [...groups].map(([key, item]) => {
     const peak = [...item.monthly].sort((a, b) => b[1] - a[1])[0]
-    return { key, ...item, share: totalCents.value ? Number((item.cents / totalCents.value * 100).toFixed(1)) : 0,
-      averageMonthlyCents: Math.round(item.cents / Math.max(item.monthly.size, 1)), peakMonthlyCents: peak?.[1] ?? 0, peakMonth: peak?.[0] ?? '' }
+    return {
+      key,
+      ...item,
+      share: totalCents.value ? Number((item.cents / totalCents.value * 100).toFixed(1)) : 0,
+      averageMonthlyCents: Math.round(item.cents / Math.max(item.monthly.size, 1)),
+      peakMonthlyCents: peak?.[1] ?? 0,
+      peakMonth: peak?.[0] ?? ''
+    }
   }).sort((a, b) => b.cents - a.cents)
 })
+
 const otherResources = computed(() => filters.period === 'historico'
   ? member.value?.otherResources ?? []
   : filters.period === 'ano' ? member.value?.otherResources?.filter(resource => resource.year === filters.year) ?? [] : [])
+
 const unavailableResourceYears = computed(() => member.value?.otherResourcesCoverage
   ?.filter(row => row.status === 'unavailable' && (filters.period === 'historico' || row.year === filters.year))
   .map(row => row.year) ?? [])
-const categoryFilter = ref('')
-const supplierFilter = ref('')
+
+const categoryFilter = ref(typeof route.query.categoria === 'string' ? route.query.categoria : '')
+const supplierFilter = ref(typeof route.query.fornecedor === 'string' ? route.query.fornecedor : '')
+const monthFilter = ref('')
+const expenseSort = ref<'recentes' | 'antigas' | 'maior' | 'menor'>('recentes')
+const showAllSuppliers = ref(false)
 const page = ref(1)
 const pageSize = 30
+
+watch(() => route.query.fornecedor, (value) => {
+  if (typeof value === 'string') supplierFilter.value = value
+})
+
 function expenseDateKey(expense: Expense) {
   return expense.issuedAt ?? `${expense.year}-${String(expense.month).padStart(2, '0')}-01`
 }
-const filteredExpenses = computed(() => expenses.value.filter(row => (!categoryFilter.value || row.category === categoryFilter.value)
-  && (!supplierFilter.value || `${row.supplier} ${row.supplierId ?? ''}`.toLocaleLowerCase('pt-BR').includes(supplierFilter.value.toLocaleLowerCase('pt-BR'))))
-  .sort((a, b) => expenseDateKey(b).localeCompare(expenseDateKey(a)) || b.id.localeCompare(a.id)))
+
+function expenseMonthKey(expense: Expense) {
+  return filters.period === 'historico'
+    ? String(expense.year)
+    : `${expense.year}-${String(expense.month).padStart(2, '0')}`
+}
+
+const filteredExpenses = computed(() => {
+  const query = supplierFilter.value.trim().toLocaleLowerCase('pt-BR')
+  const queryDigits = query.replace(/\D/g, '')
+  return expenses.value
+    .filter((row) => {
+      if (categoryFilter.value && row.category !== categoryFilter.value) return false
+      if (monthFilter.value && expenseMonthKey(row) !== monthFilter.value) return false
+      if (query) {
+        const textMatch = `${row.supplier} ${row.supplierId ?? ''} ${row.description ?? ''}`.toLocaleLowerCase('pt-BR').includes(query)
+        const rowDigits = (row.supplierId ?? '').replace(/\D/g, '')
+        const digitMatch = queryDigits.length >= 3 && rowDigits.includes(queryDigits)
+        if (!textMatch && !digitMatch) return false
+      }
+      return true
+    })
+    .sort((a, b) => {
+      if (expenseSort.value === 'maior') return b.cents - a.cents || expenseDateKey(b).localeCompare(expenseDateKey(a))
+      if (expenseSort.value === 'menor') return a.cents - b.cents || expenseDateKey(b).localeCompare(expenseDateKey(a))
+      if (expenseSort.value === 'antigas') return expenseDateKey(a).localeCompare(expenseDateKey(b)) || a.id.localeCompare(b.id)
+      return expenseDateKey(b).localeCompare(expenseDateKey(a)) || b.id.localeCompare(a.id)
+    })
+})
+
+const filteredSubtotalCents = computed(() => filteredExpenses.value.reduce((sum, item) => sum + item.cents, 0))
+const hasTableFilters = computed(() => Boolean(categoryFilter.value || supplierFilter.value || monthFilter.value))
 const visibleExpenses = computed(() => filteredExpenses.value.slice((page.value - 1) * pageSize, page.value * pageSize))
-watch([expenses, categoryFilter, supplierFilter], () => {
+
+watch([expenses, categoryFilter, supplierFilter, monthFilter, expenseSort], () => {
   page.value = 1
 })
+
+function toggleCategoryFilter(name: string) {
+  categoryFilter.value = categoryFilter.value === name ? '' : name
+}
+
+function toggleMonthFilter(month: string) {
+  monthFilter.value = monthFilter.value === month ? '' : month
+}
+
+function filterBySupplier(supplier: { name: string, identifier: string | null, key: string }) {
+  const target = !supplier.key.startsWith('record:') ? supplier.key : supplier.name
+  supplierFilter.value = supplierFilter.value === target ? '' : target
+  const element = document.getElementById('expenses-section')
+  element?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function clearTableFilters() {
+  categoryFilter.value = ''
+  supplierFilter.value = ''
+  monthFilter.value = ''
+}
+
+function exportExpensesCsv() {
+  if (!filteredExpenses.value.length || !member.value) return
+  const headers = [
+    'Competencia',
+    'DataEmissao',
+    'Fornecedor',
+    'CpfCnpj',
+    'Categoria',
+    'Detalhamento',
+    'PartidoNaData',
+    'ValorLiquidoBRL',
+    'ValorBrutoBRL',
+    'ValorGlosaBRL',
+    'Documento',
+    'FonteUrl'
+  ]
+  const escapeCsv = (val: string | number | null | undefined) => {
+    const str = String(val ?? '').replace(/"/g, '""')
+    return `"${str}"`
+  }
+  const lines = filteredExpenses.value.map(row => [
+    `${String(row.month).padStart(2, '0')}/${row.year}`,
+    row.issuedAt ?? '',
+    row.supplier ?? '',
+    row.supplierId ?? '',
+    row.category,
+    row.description ?? '',
+    row.party,
+    (row.cents / 100).toFixed(2),
+    row.grossCents !== null && row.grossCents !== undefined ? (row.grossCents / 100).toFixed(2) : (row.grossAmountOriginal ?? ''),
+    row.disallowedCents !== null && row.disallowedCents !== undefined ? (row.disallowedCents / 100).toFixed(2) : (row.disallowedAmountOriginal ?? ''),
+    row.documentNumber ?? '',
+    row.documentUrl || row.portalUrl || row.sourceUrl
+  ].map(escapeCsv).join(';'))
+
+  const csvContent = `\uFEFF${headers.join(';')}\n${lines.join('\n')}`
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `despesas-${member.value.id.replace(':', '-')}.csv`
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
 function monthLabel(value: string) {
   if (/^\d{4}$/.test(value)) return value
   return `${months[Number(value.slice(5)) - 1]} ${value.slice(0, 4)}`
 }
-useSeoMeta({ title: () => member.value ? `${member.value.name} | Parlamentares` : 'Parlamentar | Parlamentares',
-  description: () => member.value ? `Despesas oficiais da cota parlamentar de ${member.value.name}.` : 'Consulta individual de despesas parlamentares.' })
+
+useSeoMeta({
+  title: () => member.value ? `${member.value.name} | Parlamentares` : 'Parlamentar | Parlamentares',
+  description: () => member.value ? `Despesas oficiais da cota parlamentar de ${member.value.name}.` : 'Consulta individual de despesas parlamentares.'
+})
 </script>
 
 <template>
@@ -80,7 +217,11 @@ useSeoMeta({ title: () => member.value ? `${member.value.name} | Parlamentares` 
     class="profile-page"
   >
     <p class="breadcrumbs">
-      <NuxtLink to="/">Visão geral</NuxtLink><span aria-hidden="true">/</span> Perfil parlamentar
+      <NuxtLink to="/">Visão geral</NuxtLink>
+      <span aria-hidden="true">/</span>
+      <NuxtLink to="/gastos">Parlamentares</NuxtLink>
+      <span aria-hidden="true">/</span>
+      <span>{{ member.name }}</span>
     </p>
 
     <DataStatus
@@ -99,9 +240,10 @@ useSeoMeta({ title: () => member.value ? `${member.value.name} | Parlamentares` 
       <div class="profile-identity">
         <p class="profile-kicker">
           {{ member.chamber === 'deputados' ? 'Câmara dos Deputados' : 'Senado Federal' }} · {{ member.state }}
+          <span class="profile-status-pill">{{ member.current ? 'Em exercício' : 'Histórico / Suplência' }}</span>
         </p>
         <h1>{{ member.name }}</h1>
-        <p>{{ member.current ? 'Filiação atual:' : 'Filiação no cadastro:' }} {{ member.party }} <span aria-hidden="true">·</span> {{ member.state }}</p>
+        <p>{{ member.current ? 'Filiação atual:' : 'Filiação no cadastro:' }} <strong>{{ member.party }}</strong> <span aria-hidden="true">·</span> {{ member.state }}</p>
         <p class="profile-links">
           <a
             v-if="officialProfileUrl"
@@ -163,6 +305,35 @@ useSeoMeta({ title: () => member.value ? `${member.value.name} | Parlamentares` 
       </div>
     </header>
 
+    <section
+      v-if="member.affiliations?.length || member.mandate"
+      class="profile-history-strip"
+      aria-label="Histórico de mandato e filiação partidária"
+    >
+      <div
+        v-if="member.mandate"
+        class="profile-history-item"
+      >
+        <span class="profile-history-label">Mandato registrado:</span>
+        <span>{{ formatDate(member.mandate.start) }} a {{ formatDate(member.mandate.end) }}{{ member.mandate.partial ? ' (cobertura parcial)' : '' }}</span>
+      </div>
+      <div
+        v-if="member.affiliations?.length"
+        class="profile-history-item"
+      >
+        <span class="profile-history-label">Histórico partidário oficial:</span>
+        <ul class="affiliation-chips">
+          <li
+            v-for="(item, idx) in member.affiliations"
+            :key="`${item.party}-${item.start}-${idx}`"
+          >
+            <strong>{{ item.party }}</strong>
+            <small>{{ formatDate(item.start) }} – {{ item.end ? formatDate(item.end) : 'atual' }}</small>
+          </li>
+        </ul>
+      </div>
+    </section>
+
     <CustomPeriodFields
       v-if="filters.period === 'personalizado'"
       v-model:start="filters.startMonth"
@@ -182,12 +353,37 @@ useSeoMeta({ title: () => member.value ? `${member.value.name} | Parlamentares` 
         class="profile-total"
         aria-label="Resumo da cota parlamentar"
       >
-        <div>
-          <span>Despesas publicadas da cota</span>
+        <div class="profile-total-main">
+          <span>Despesas líquidas publicadas da cota</span>
           <strong>{{ totalCents === null ? 'Sem registros no recorte' : formatMoney(totalCents) }}</strong>
-          <small>{{ periodLabel }} · {{ expenses.length.toLocaleString('pt-BR') }} registros</small>
+          <small>
+            {{ periodLabel }} · {{ expenses.length.toLocaleString('pt-BR') }} {{ expenses.length === 1 ? 'registro' : 'registros' }}
+            <template v-if="totalDisallowedCents > 0">
+              · {{ formatMoney(totalDisallowedCents) }} em glosas (valores descontados pela Casa)
+            </template>
+          </small>
         </div>
-        <p>A Cota para o Exercício da Atividade Parlamentar cobre itens definidos por cada Casa. Ela não representa todo o custo do mandato.</p>
+
+        <div
+          v-if="chamberBenchmark"
+          class="profile-benchmarks"
+          aria-label="Comparativo na mesma Casa e período"
+        >
+          <div v-if="chamberBenchmark.rank">
+            <span>Posição no período</span>
+            <strong>{{ chamberBenchmark.rank }}º <small>de {{ chamberBenchmark.memberCount }}</small></strong>
+          </div>
+          <div>
+            <span>Média da Casa</span>
+            <strong>{{ formatMoney(chamberBenchmark.averageCents) }}</strong>
+          </div>
+          <div>
+            <span>Mediana da Casa</span>
+            <strong>{{ formatMoney(chamberBenchmark.medianCents) }}</strong>
+          </div>
+        </div>
+
+        <p>A Cota para o Exercício da Atividade Parlamentar cobre itens definidos por cada Casa e não representa todo o custo do mandato. Comparativos consideram apenas valores publicados na mesma Casa e período.</p>
       </section>
 
       <section class="profile-content-grid">
@@ -200,30 +396,47 @@ useSeoMeta({ title: () => member.value ? `${member.value.name} | Parlamentares` 
               <h2 id="profile-categories-title">
                 Em que gastou
               </h2>
-              <p>Categorias originais publicadas pela Casa</p>
+              <p>Clique em uma categoria para filtrar as notas abaixo</p>
             </div>
             <span>{{ periodLabel }}</span>
           </header>
-          <ul class="profile-category-list">
+          <ul
+            v-if="categories.length"
+            class="profile-category-list"
+          >
             <li
               v-for="category in categories"
               :key="category.name"
             >
-              <div class="category-label">
-                <span>{{ category.name }}</span><strong>{{ formatPercentage(category.share) }}</strong>
-              </div>
-              <div
-                class="category-track"
-                aria-hidden="true"
+              <button
+                type="button"
+                class="category-filter-btn"
+                :class="{ 'is-selected': categoryFilter === category.name }"
+                :aria-pressed="categoryFilter === category.name"
+                @click="toggleCategoryFilter(category.name)"
               >
-                <span
-                  class="category-fill"
-                  :style="{ width: `${Math.max(0, Math.min(100, category.share))}%`, backgroundColor: category.color }"
-                />
-              </div>
-              <span class="category-value">{{ formatMoney(category.cents) }}</span>
+                <div class="category-label">
+                  <span>{{ category.name }}</span><strong>{{ formatPercentage(category.share) }}</strong>
+                </div>
+                <div
+                  class="category-track"
+                  aria-hidden="true"
+                >
+                  <span
+                    class="category-fill"
+                    :style="{ width: `${Math.max(0, Math.min(100, category.share))}%`, backgroundColor: category.color }"
+                  />
+                </div>
+                <span class="category-value">{{ formatMoney(category.cents) }}</span>
+              </button>
             </li>
           </ul>
+          <p
+            v-else
+            class="category-empty"
+          >
+            Sem categorias registradas neste período.
+          </p>
         </article>
 
         <article
@@ -235,10 +448,19 @@ useSeoMeta({ title: () => member.value ? `${member.value.name} | Parlamentares` 
               <h2 id="profile-monthly-title">
                 Ao longo do tempo
               </h2>
-              <p>{{ filters.period === 'historico' ? 'Despesas agrupadas por ano' : 'Meses com registros publicados no período' }}</p>
+              <p>{{ filters.period === 'historico' ? 'Clique em um ano para filtrar as notas' : 'Clique em um mês para filtrar as notas' }}</p>
             </div>
+            <button
+              v-if="monthFilter"
+              type="button"
+              class="chart-clear-btn"
+              @click="monthFilter = ''"
+            >
+              Limpar ({{ monthLabel(monthFilter) }})
+            </button>
           </header>
           <ol
+            v-if="monthlyAmounts.length"
             class="profile-monthly-chart"
             :class="{ 'quarter-chart': filters.period.startsWith('q') }"
             tabindex="0"
@@ -247,27 +469,42 @@ useSeoMeta({ title: () => member.value ? `${member.value.name} | Parlamentares` 
             <li
               v-for="item in monthlyAmounts"
               :key="item.month"
-              :aria-label="`${monthLabel(item.month)}: ${item.count ? formatMoney(item.cents) : 'Sem registros publicados'}`"
+              :class="{ 'is-selected': monthFilter === item.month }"
             >
-              <span
-                v-if="item.count"
-                class="profile-month-value"
-                aria-hidden="true"
-                :title="formatMoney(item.cents)"
-              >{{ formatCompactMoney(item.cents) }}</span>
-              <span
-                v-if="item.count"
-                class="profile-month-bar"
-                aria-hidden="true"
-              ><i :style="{ height: `${Math.max(Math.abs(item.cents) / monthlyMaximum * 100, 2)}%` }" /></span>
-              <span
-                v-else
-                class="profile-no-records"
-                aria-hidden="true"
-              >—</span>
-              <span>{{ monthLabel(item.month) }}</span>
+              <button
+                type="button"
+                class="profile-month-btn"
+                :disabled="!item.count"
+                :aria-pressed="monthFilter === item.month"
+                :aria-label="`${monthLabel(item.month)}: ${item.count ? formatMoney(item.cents) : 'Sem registros publicados'}`"
+                @click="toggleMonthFilter(item.month)"
+              >
+                <span
+                  v-if="item.count"
+                  class="profile-month-value"
+                  aria-hidden="true"
+                  :title="formatMoney(item.cents)"
+                >{{ formatCompactMoney(item.cents) }}</span>
+                <span
+                  v-if="item.count"
+                  class="profile-month-bar"
+                  aria-hidden="true"
+                ><i :style="{ height: `${Math.max(Math.abs(item.cents) / monthlyMaximum * 100, 2)}%` }" /></span>
+                <span
+                  v-else
+                  class="profile-no-records"
+                  aria-hidden="true"
+                >—</span>
+                <span class="profile-month-label">{{ monthLabel(item.month) }}</span>
+              </button>
             </li>
           </ol>
+          <p
+            v-else
+            class="category-empty"
+          >
+            Sem registros publicados no período selecionado.
+          </p>
         </article>
       </section>
 
@@ -280,14 +517,17 @@ useSeoMeta({ title: () => member.value ? `${member.value.name} | Parlamentares` 
             <h2 id="suppliers-title">
               Fornecedores
             </h2>
-            <p>15 maiores valores por fornecedor. Total por CPF/CNPJ publicado; identificadores ausentes ficam separados por registro.</p>
+            <p>{{ showAllSuppliers ? `Todos os ${suppliers.length} fornecedores` : '15 maiores valores por fornecedor' }}. Total por CPF/CNPJ publicado; identificadores ausentes ficam separados por registro.</p>
           </div>
           <span>Identificação da fonte</span>
         </header>
-        <div class="supplier-table-wrap">
+        <div
+          v-if="suppliers.length"
+          class="supplier-table-wrap"
+        >
           <table class="supplier-table supplier-summary-table">
             <caption class="sr-only">
-              Quinze maiores fornecedores no período selecionado, com identificação e valores publicados.
+              Maiores fornecedores no período selecionado, com identificação e valores publicados.
             </caption>
             <colgroup>
               <col>
@@ -301,29 +541,48 @@ useSeoMeta({ title: () => member.value ? `${member.value.name} | Parlamentares` 
               <tr>
                 <th scope="col">
                   Fornecedor
-                </th><th scope="col">
+                </th>
+                <th scope="col">
                   CPF/CNPJ
-                </th><th scope="col">
+                </th>
+                <th scope="col">
                   Participação
-                </th><th scope="col">
+                </th>
+                <th scope="col">
                   Total no período
-                </th><th scope="col">
+                </th>
+                <th scope="col">
                   Média nos meses com registros
-                </th><th scope="col">
+                </th>
+                <th scope="col">
                   Maior mês
                 </th>
               </tr>
             </thead>
             <tbody>
               <tr
-                v-for="supplier in suppliers.slice(0, 15)"
+                v-for="supplier in (showAllSuppliers ? suppliers : suppliers.slice(0, 15))"
                 :key="supplier.key"
               >
                 <td data-label="Fornecedor">
                   <strong>{{ supplier.name }}</strong>
+                  <div class="supplier-row-actions">
+                    <button
+                      type="button"
+                      class="supplier-filter-link"
+                      @click="filterBySupplier(supplier)"
+                    >
+                      <UIcon
+                        name="i-lucide-filter"
+                        aria-hidden="true"
+                      />
+                      <span>Filtrar {{ supplier.count }} {{ supplier.count === 1 ? 'nota' : 'notas' }}</span>
+                    </button>
+                  </div>
                 </td>
                 <td data-label="CPF/CNPJ">
-                  <span>{{ supplier.identifier ?? 'Não informado pela fonte' }}</span>
+                  <span>{{ formatSupplierIdentifier(supplier.identifier) }}</span>
+                  <SupplierCnpjLookup :identifier="supplier.identifier" />
                 </td>
                 <td data-label="Participação">
                   <span>{{ formatPercentage(supplier.share) }}</span>
@@ -333,27 +592,45 @@ useSeoMeta({ title: () => member.value ? `${member.value.name} | Parlamentares` 
                   data-label="Total no período"
                 >
                   <span>{{ formatMoney(supplier.cents) }}</span>
-                </td><td
+                </td>
+                <td
                   class="supplier-money"
                   data-label="Média mensal"
                 >
                   <span>{{ formatMoney(supplier.averageMonthlyCents) }}</span>
-                </td><td
+                </td>
+                <td
                   class="supplier-money supplier-peak"
                   data-label="Maior mês"
                 >
-                  <span>{{ formatMoney(supplier.peakMonthlyCents) }}</span><small>{{ monthLabel(supplier.peakMonth) }}</small>
+                  <span>{{ formatMoney(supplier.peakMonthlyCents) }}</span>
+                  <small>{{ monthLabel(supplier.peakMonth) }}</small>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
+        <div
+          v-if="suppliers.length > 15"
+          class="supplier-more-wrap"
+        >
+          <UButton
+            color="neutral"
+            variant="ghost"
+            size="sm"
+            :icon="showAllSuppliers ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+            @click="showAllSuppliers = !showAllSuppliers"
+          >
+            {{ showAllSuppliers ? 'Mostrar apenas os 15 maiores' : `Ver todos os ${suppliers.length} fornecedores do período` }}
+          </UButton>
+        </div>
         <p class="supplier-footnote">
-          Quando houver um identificador publicado pela fonte, ele poderá ser ligado a informações cadastrais complementares. Esse enriquecimento será opcional e não alterará o registro oficial da despesa.
+          Para fornecedores com CNPJ de 14 dígitos, o botão “Consultar CNPJ” busca dados cadastrais públicos em fonte externa sob ação do usuário, sem alterar o registro oficial.
         </p>
       </section>
 
       <section
+        id="expenses-section"
         class="suppliers-panel"
         aria-labelledby="expenses-title"
       >
@@ -361,20 +638,95 @@ useSeoMeta({ title: () => member.value ? `${member.value.name} | Parlamentares` 
           <div>
             <h2 id="expenses-title">
               Todas as despesas da cota
-            </h2><p>Mais recentes primeiro pela data de emissão; sem data, usamos a competência. {{ member.chamber === 'deputados' ? 'Cada linha abre a consulta correspondente no portal da Câmara.' : 'Os links apontam para a fonte oficial do Senado.' }} Comprovantes são abertos à parte quando publicados.</p>
+            </h2>
+            <p>{{ member.chamber === 'deputados' ? 'Cada linha abre a consulta correspondente no portal da Câmara.' : 'Os links apontam para a fonte oficial do Senado.' }} Comprovantes são abertos à parte quando publicados.</p>
           </div>
+          <UButton
+            v-if="filteredExpenses.length"
+            color="neutral"
+            variant="outline"
+            size="xs"
+            icon="i-lucide-download"
+            @click="exportExpensesCsv"
+          >
+            Exportar CSV ({{ filteredExpenses.length }})
+          </UButton>
         </header>
+
         <div class="expense-controls">
-          <label class="filter-field"><span>Categoria</span><select v-model="categoryFilter"><option value="">Todas</option><option
-            v-for="category in categories"
-            :key="category.name"
-            :value="category.name"
-          >{{ category.name }}</option></select></label><label class="filter-field"><span>Fornecedor ou CPF/CNPJ</span><input
-            v-model="supplierFilter"
-            type="search"
-            placeholder="Buscar fornecedor"
-          ></label>
+          <label class="filter-field">
+            <span>Categoria</span>
+            <select v-model="categoryFilter">
+              <option value="">Todas</option>
+              <option
+                v-for="category in categories"
+                :key="category.name"
+                :value="category.name"
+              >{{ category.name }}</option>
+            </select>
+          </label>
+          <label class="filter-field">
+            <span>Fornecedor, descrição ou CPF/CNPJ</span>
+            <input
+              v-model="supplierFilter"
+              type="search"
+              placeholder="Buscar fornecedor, CNPJ ou detalhe"
+            >
+          </label>
+          <label class="filter-field">
+            <span>Ordenar notas por</span>
+            <select v-model="expenseSort">
+              <option value="recentes">Mais recentes</option>
+              <option value="antigas">Mais antigas</option>
+              <option value="maior">Maior valor</option>
+              <option value="menor">Menor valor</option>
+            </select>
+          </label>
         </div>
+
+        <div
+          v-if="hasTableFilters"
+          class="active-table-filters"
+          role="status"
+        >
+          <span>
+            Filtro ativo: <strong>{{ filteredExpenses.length.toLocaleString('pt-BR') }}</strong> de {{ expenses.length.toLocaleString('pt-BR') }} registros · Subtotal: <strong>{{ formatMoney(filteredSubtotalCents) }}</strong>
+          </span>
+          <div class="active-filter-chips">
+            <button
+              v-if="categoryFilter"
+              type="button"
+              class="filter-chip"
+              @click="categoryFilter = ''"
+            >
+              Categoria: {{ categoryFilter }} ×
+            </button>
+            <button
+              v-if="monthFilter"
+              type="button"
+              class="filter-chip"
+              @click="monthFilter = ''"
+            >
+              Período: {{ monthLabel(monthFilter) }} ×
+            </button>
+            <button
+              v-if="supplierFilter"
+              type="button"
+              class="filter-chip"
+              @click="supplierFilter = ''"
+            >
+              Busca: {{ supplierFilter }} ×
+            </button>
+            <button
+              type="button"
+              class="filter-chip-clear"
+              @click="clearTableFilters"
+            >
+              Limpar todos
+            </button>
+          </div>
+        </div>
+
         <div
           class="supplier-table-wrap"
           role="region"
@@ -383,7 +735,7 @@ useSeoMeta({ title: () => member.value ? `${member.value.name} | Parlamentares` 
         >
           <table class="supplier-table expense-register-table">
             <caption class="sr-only">
-              Despesas da cota parlamentar, ordenadas por data, com competência, fornecedor, categoria, valor e links oficiais.
+              Despesas da cota parlamentar, ordenadas conforme seleção, com competência, fornecedor, categoria, valor e links oficiais.
             </caption>
             <colgroup>
               <col>
@@ -396,17 +748,22 @@ useSeoMeta({ title: () => member.value ? `${member.value.name} | Parlamentares` 
               <tr>
                 <th scope="col">
                   Competência
-                </th><th scope="col">
+                </th>
+                <th scope="col">
                   Fornecedor / CPF ou CNPJ
-                </th><th scope="col">
-                  Categoria
-                </th><th scope="col">
-                  Valor
-                </th><th scope="col">
+                </th>
+                <th scope="col">
+                  Categoria e detalhamento
+                </th>
+                <th scope="col">
+                  Valor líquido
+                </th>
+                <th scope="col">
                   Fonte oficial
                 </th>
               </tr>
-            </thead><tbody>
+            </thead>
+            <tbody>
               <tr
                 v-for="expense in visibleExpenses"
                 :key="expense.id"
@@ -415,27 +772,48 @@ useSeoMeta({ title: () => member.value ? `${member.value.name} | Parlamentares` 
                   class="expense-period"
                   data-label="Competência"
                 >
-                  {{ String(expense.month).padStart(2, '0') }}/{{ expense.year }}
+                  <span>{{ String(expense.month).padStart(2, '0') }}/{{ expense.year }}</span>
+                  <small v-if="expense.issuedAt">Emissão: {{ formatDate(expense.issuedAt) }}</small>
                 </td>
                 <td
                   class="expense-supplier"
                   data-label="Fornecedor"
                 >
                   <strong>{{ expense.supplier || 'Não informado' }}</strong>
-                  <small>{{ expense.supplierId || 'Identificador não informado' }}</small>
+                  <small>{{ formatSupplierIdentifier(expense.supplierId) }}</small>
                 </td>
                 <td
                   class="expense-category"
                   data-label="Categoria"
                 >
-                  {{ expense.category }}
+                  <span>{{ expense.category }}</span>
+                  <small
+                    v-if="expense.description"
+                    class="expense-detail-text"
+                  >Detalhe: {{ expense.description }}</small>
                   <small>Partido na data: {{ expense.party }}</small>
                 </td>
                 <td
                   class="expense-amount"
-                  data-label="Valor"
+                  data-label="Valor líquido"
                 >
-                  <span>{{ formatMoney(expense.cents) }}</span>
+                  <span :class="{ 'expense-negative': expense.cents < 0 }">{{ formatMoney(expense.cents) }}</span>
+                  <small
+                    v-if="expense.cents < 0"
+                    class="expense-adjustment-badge"
+                  >Estorno / ajuste negativo</small>
+                  <small
+                    v-if="expense.disallowedCents && expense.disallowedCents > 0"
+                    class="expense-glosa-note"
+                  >Glosa: {{ formatMoney(expense.disallowedCents) }}{{ expense.grossCents ? ` (Bruto: ${formatMoney(expense.grossCents)})` : '' }}</small>
+                  <small
+                    v-else-if="expense.disallowedAmountOriginal && expense.disallowedAmountOriginal !== '0'"
+                    class="expense-glosa-note"
+                  >Glosa original: R$ {{ expense.disallowedAmountOriginal }}</small>
+                  <small
+                    v-if="expense.restitutionCents && expense.restitutionCents !== 0"
+                    class="expense-restitution-note"
+                  >Restituição: {{ formatMoney(expense.restitutionCents) }}</small>
                 </td>
                 <td
                   class="expense-document"
@@ -484,7 +862,9 @@ useSeoMeta({ title: () => member.value ? `${member.value.name} | Parlamentares` 
             @click="page--"
           >
             Anterior
-          </UButton><span>{{ filteredExpenses.length }} registros · página {{ page }} de {{ Math.max(1, Math.ceil(filteredExpenses.length / pageSize)) }}</span><UButton
+          </UButton>
+          <span>{{ filteredExpenses.length.toLocaleString('pt-BR') }} registros · página {{ page }} de {{ Math.max(1, Math.ceil(filteredExpenses.length / pageSize)) }}</span>
+          <UButton
             :disabled="page * pageSize >= filteredExpenses.length"
             color="neutral"
             variant="outline"
@@ -494,6 +874,7 @@ useSeoMeta({ title: () => member.value ? `${member.value.name} | Parlamentares` 
           </UButton>
         </div>
       </section>
+
       <section
         v-if="otherResources.length"
         class="suppliers-panel"
@@ -503,9 +884,11 @@ useSeoMeta({ title: () => member.value ? `${member.value.name} | Parlamentares` 
           <div>
             <h2 id="other-resources-title">
               Recursos fora da cota
-            </h2><p>{{ filters.period === 'historico' ? `Totais anuais individualizados pelo Senado entre ${years[0]} e ${years.at(-1)}. Não entram no ranking de cotas.` : `Totais anuais individualizados pelo Senado em ${filters.year}. Não entram no ranking de cotas.` }}</p>
+            </h2>
+            <p>{{ filters.period === 'historico' ? `Totais anuais individualizados pelo Senado entre ${years[0]} e ${years.at(-1)}. Não entram no ranking de cotas.` : `Totais anuais individualizados pelo Senado em ${filters.year}. Não entram no ranking de cotas.` }}</p>
           </div>
-        </header><dl class="other-resource-list">
+        </header>
+        <dl class="other-resource-list">
           <div
             v-for="resource in otherResources"
             :key="`${resource.year}:${resource.type}`"
@@ -517,7 +900,8 @@ useSeoMeta({ title: () => member.value ? `${member.value.name} | Parlamentares` 
                 rel="noreferrer"
               >{{ resource.type }}</a>
               <small>{{ resource.year }}</small>
-            </dt><dd>{{ formatMoney(resource.cents) }}</dd>
+            </dt>
+            <dd>{{ formatMoney(resource.cents) }}</dd>
           </div>
         </dl>
         <p
@@ -533,6 +917,7 @@ useSeoMeta({ title: () => member.value ? `${member.value.name} | Parlamentares` 
       >
         {{ filters.period === 'historico' ? 'A fonte não publicou recursos individualizados para este cadastro no intervalo selecionado.' : 'Recursos fora da cota possuem granularidade anual. Selecione “Ano inteiro” para consultá-los; não é possível rateá-los por trimestre, mandato ou intervalo personalizado.' }}
       </p>
+
       <section
         class="disclosure-panel"
         aria-labelledby="other-disclosures-title"

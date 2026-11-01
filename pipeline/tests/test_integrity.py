@@ -4,12 +4,13 @@ import unittest
 from decimal import Decimal
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
-from pipeline.aggregate.expenses import summarize
+from pipeline.aggregate.expenses import summarize, summarize_suppliers
 from pipeline.collect import publish, verify_output
 from pipeline.normalize.common import cents, auxiliary_cents, party_at, in_mandate, supplier_key
 from pipeline.sources.camara import normalize, mandate_from_history, affiliations_from_history
 from pipeline.sources.senado import normalize as normalize_senado
-from pipeline.validate.integrity import validate
+from pipeline.sources.tse import normalize_election, unavailable_election
+from pipeline.validate.integrity import validate, validate_suppliers, validate_election
 
 
 class IntegrityTests(unittest.TestCase):
@@ -160,6 +161,183 @@ class IntegrityTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'duplicado entre anos'):
                 publish(output, members, [], summaries, metadata, year_batches=iter(duplicates))
             self.assertEqual((output / 'manifest.json').read_bytes(), previous)
+
+    def test_supplier_aggregation_reconciles_and_keeps_unidentified_separate(self):
+        members = {
+            'camara:1': {'id': 'camara:1', 'name': 'Dep 1', 'chamber': 'deputados', 'mandate': None},
+            'senado:2': {'id': 'senado:2', 'name': 'Sen 2', 'chamber': 'senadores', 'mandate': None}
+        }
+        records = [
+            {'id': 'camara:r1', 'memberId': 'camara:1', 'year': 2025, 'month': 1, 'party': 'A',
+             'category': 'Passagens', 'inMandate': True, 'cents': 5000, 'supplier': 'Empresa X',
+             'supplierId': '12.345.678/0001-99', 'sourceUrl': 'https://www.camara.leg.br',
+             'portalUrl': 'https://www.camara.leg.br/cota-parlamentar/sumarizado?nuDeputadoId=1'},
+            {'id': 'camara:r2', 'memberId': 'camara:1', 'year': 2025, 'month': 2, 'party': 'A',
+             'category': 'Passagens', 'inMandate': True, 'cents': -1000, 'supplier': 'Empresa X',
+             'supplierId': '12345678000199', 'sourceUrl': 'https://www.camara.leg.br',
+             'portalUrl': 'https://www.camara.leg.br/cota-parlamentar/sumarizado?nuDeputadoId=1'},
+            {'id': 'camara:r3', 'memberId': 'camara:1', 'year': 2025, 'month': 3, 'party': 'A',
+             'category': 'Passagens', 'inMandate': True, 'cents': 2500, 'supplier': 'Sem CNPJ',
+             'supplierId': '00000000000001', 'sourceUrl': 'https://www.camara.leg.br',
+             'portalUrl': 'https://www.camara.leg.br/cota-parlamentar/sumarizado?nuDeputadoId=1'},
+            {'id': 'senado:10', 'memberId': 'senado:2', 'year': 2025, 'month': 1, 'party': 'B',
+             'category': 'Locomoção', 'inMandate': True, 'cents': 8000, 'supplier': 'Empresa X',
+             'supplierId': '12.345.678/0001-99', 'sourceUrl': 'https://adm.senado.gov.br',
+             'portalUrl': None}
+        ]
+        supplier_summary = summarize_suppliers(records, 2025)
+        self.assertEqual(len(supplier_summary['rows']), 2)
+        self.assertEqual(supplier_summary['rows'][0]['supplierKey'], '12345678000199')
+        self.assertEqual(supplier_summary['rows'][0]['memberId'], 'camara:1')
+        self.assertEqual(supplier_summary['rows'][0]['cents'], 4000)
+        self.assertEqual(supplier_summary['rows'][0]['count'], 2)
+        self.assertEqual(supplier_summary['unidentified'], [{'memberId': 'camara:1', 'year': 2025, 'cents': 2500, 'count': 1}])
+        validate_suppliers(records, supplier_summary, members, 2025)
+        with self.assertRaisesRegex(ValueError, 'não reconcilia'):
+            validate_suppliers(records, {**supplier_summary, 'unidentified': []}, members, 2025)
+        with self.assertRaisesRegex(ValueError, 'Chave de fornecedor inválida'):
+            validate_suppliers(records, {
+                'year': 2025,
+                'unidentified': [],
+                'rows': [{'supplierKey': '00000000000001', 'supplier': 'T', 'supplierId': '1', 'memberId': 'camara:1', 'year': 2025, 'cents': 2500, 'count': 1}]
+            }, members, 2025)
+
+    def test_tse_election_normalization_and_reconciliation(self):
+        candidates = [
+            {'SQ_CANDIDATO': '280001', 'CD_CARGO': '6', 'NM_CANDIDATO': 'CANDIDATA FEDERAL',
+             'NM_URNA_CANDIDATO': 'CANDIDATA URNA', 'NR_CANDIDATO': '1234', 'SG_PARTIDO': 'PART',
+             'SG_UF': 'SP', 'DS_SIT_TOT_TURNO': 'ELEITO POR QP'},
+            {'SQ_CANDIDATO': '280002', 'CD_CARGO': '7', 'NM_CANDIDATO': 'ESTADUAL IGNORADO',
+             'NM_URNA_CANDIDATO': 'ESTADUAL', 'NR_CANDIDATO': '12345', 'SG_PARTIDO': 'PART',
+             'SG_UF': 'SP', 'DS_SIT_TOT_TURNO': 'ELEITO'}
+        ]
+        revenues = [
+            {'SQ_CANDIDATO': '280001', 'CD_CARGO': '6', 'DS_ORIGEM_RECEITA': 'Recursos de partido político',
+             'DS_FONTE_RECEITA': 'Fundo Especial de Financiamento de Campanha', 'VR_RECEITA': '100.000,00'},
+            {'SQ_CANDIDATO': '280001', 'CD_CARGO': '6', 'DS_ORIGEM_RECEITA': 'Recursos de partido político',
+             'DS_FONTE_RECEITA': 'Fundo Partidário', 'VR_RECEITA': '25.000,50'},
+            {'SQ_CANDIDATO': '280001', 'CD_CARGO': '6', 'DS_ORIGEM_RECEITA': 'Recursos de pessoas físicas',
+             'DS_FONTE_RECEITA': 'Outros Recursos', 'VR_RECEITA': '5.000,00'},
+            {'SQ_CANDIDATO': '280001', 'CD_CARGO': '6', 'DS_ORIGEM_RECEITA': 'Recursos próprios',
+             'DS_FONTE_RECEITA': 'Outros Recursos', 'VR_RECEITA': '1.000,00'},
+            {'SQ_CANDIDATO': '280002', 'CD_CARGO': '7', 'DS_ORIGEM_RECEITA': 'Recursos próprios',
+             'DS_FONTE_RECEITA': 'Outros Recursos', 'VR_RECEITA': '999.999,00'}
+        ]
+        expenses = [
+            {'SQ_CANDIDATO': '280001', 'CD_CARGO': '6', 'DS_ORIGEM_DESPESA': 'Publicidade por materiais impressos',
+             'NR_CPF_CNPJ_FORNECEDOR': '12.345.678/0001-99', 'NM_FORNECEDOR': 'GRAFICA X',
+             'VR_DESPESA_CONTRATADA': '80.000,00'},
+            {'SQ_CANDIDATO': '280001', 'CD_CARGO': '6', 'DS_ORIGEM_DESPESA': 'Despesas com pessoal',
+             'NR_CPF_CNPJ_FORNECEDOR': '#NULO#', 'NM_FORNECEDOR': 'DIVERSOS',
+             'VR_DESPESA_CONTRATADA': '10.000,00'}
+        ]
+        urls = {'candidates': 'https://cdn.tse.jus.br/cand.zip', 'accounts': 'https://cdn.tse.jus.br/acc.zip'}
+        election = normalize_election(candidates, revenues, expenses, 2022, urls)
+        validate_election(election)
+        self.assertEqual(len(election['candidates']), 1)
+        cand = election['candidates'][0]
+        self.assertEqual(cand['id'], 'tse:2022:280001')
+        self.assertTrue(cand['elected'])
+        self.assertEqual(cand['fefcCents'], 10000000)
+        self.assertEqual(cand['partyFundCents'], 2500050)
+        self.assertEqual(cand['individualCents'], 500000)
+        self.assertEqual(cand['ownResourcesCents'], 100000)
+        self.assertEqual(cand['totalRevenueCents'], 13100050)
+        self.assertEqual(cand['totalExpenseCents'], 9000000)
+        self.assertEqual(election['suppliers']['rows'][0]['supplierKey'], '12345678000199')
+        self.assertEqual(election['suppliers']['rows'][0]['cents'], 8000000)
+        self.assertEqual(election['suppliers']['unidentified'], {'cents': 1000000, 'count': 1})
+        validate_election(unavailable_election(2026, 'Ainda não publicado'))
+        with self.assertRaisesRegex(ValueError, 'Fornecedores de campanha não reconciliam'):
+            validate_election({**election, 'suppliers': {'unidentified': {'cents': 0, 'count': 0}, 'rows': []}})
+
+    def test_tse_municipal_and_historical_elections_reconcile(self):
+        mun_candidates = [
+            {'SQ_CANDIDATO': '9001', 'CD_CARGO': '11', 'NM_CANDIDATO': 'PREFEITA ELEITA',
+             'NM_URNA_CANDIDATO': 'PREFEITA A', 'NR_CANDIDATO': '15', 'SG_PARTIDO': 'MDB',
+             'SG_UF': 'SP', 'SG_UE': '71072', 'NM_UE': 'SÃO PAULO', 'DS_SIT_TOT_TURNO': 'ELEITO'},
+            {'SQ_CANDIDATO': '9002', 'CD_CARGO': '13', 'NM_CANDIDATO': 'VEREADORA ELEITA',
+             'NM_URNA_CANDIDATO': 'VEREADORA B', 'NR_CANDIDATO': '15000', 'SG_PARTIDO': 'MDB',
+             'SG_UF': 'SP', 'SG_UE': '71072', 'NM_UE': 'SÃO PAULO', 'DS_SIT_TOT_TURNO': 'ELEITO POR QP'},
+            {'SQ_CANDIDATO': '9003', 'CD_CARGO': '13', 'NM_CANDIDATO': 'VEREADOR SUPLENTE',
+             'NM_URNA_CANDIDATO': 'VEREADOR C', 'NR_CANDIDATO': '15001', 'SG_PARTIDO': 'MDB',
+             'SG_UF': 'SP', 'SG_UE': '71072', 'NM_UE': 'SÃO PAULO', 'DS_SIT_TOT_TURNO': 'SUPLENTE'}
+        ]
+        mun_revenues = [
+            {'SQ_CANDIDATO': '9001', 'CD_CARGO': '11', 'DS_ORIGEM_RECEITA': 'Recursos de partido político',
+             'DS_FONTE_RECEITA': 'Fundo Especial de Financiamento de Campanha', 'VR_RECEITA': '500.000,00'},
+            {'SQ_CANDIDATO': '9002', 'CD_CARGO': '13', 'DS_ORIGEM_RECEITA': 'Recursos de partido político',
+             'DS_FONTE_RECEITA': 'Fundo Partidário', 'VR_RECEITA': '50.000,00'},
+            {'SQ_CANDIDATO': '9003', 'CD_CARGO': '13', 'DS_ORIGEM_RECEITA': 'Recursos próprios',
+             'DS_FONTE_RECEITA': 'Outros Recursos', 'VR_RECEITA': '2.000,00'}
+        ]
+        mun_expenses = [
+            {'SQ_CANDIDATO': '9001', 'CD_CARGO': '11', 'DS_ORIGEM_DESPESA': 'Marketing',
+             'NR_CPF_CNPJ_FORNECEDOR': '12.345.678/0001-99', 'NM_FORNECEDOR': 'AGENCIA MUNICIPAL',
+             'VR_DESPESA_CONTRATADA': '400.000,00'},
+            {'SQ_CANDIDATO': '9002', 'CD_CARGO': '13', 'DS_ORIGEM_DESPESA': 'Impressos',
+             'NR_CPF_CNPJ_FORNECEDOR': '12.345.678/0001-99', 'NM_FORNECEDOR': 'AGENCIA MUNICIPAL',
+             'VR_DESPESA_CONTRATADA': '40.000,00'},
+            {'SQ_CANDIDATO': '9003', 'CD_CARGO': '13', 'DS_ORIGEM_DESPESA': 'Impressos',
+             'NR_CPF_CNPJ_FORNECEDOR': '12.345.678/0001-99', 'NM_FORNECEDOR': 'AGENCIA MUNICIPAL',
+             'VR_DESPESA_CONTRATADA': '1.500,00'}
+        ]
+        urls = {'candidates': 'https://cdn.tse.jus.br/cand2024.zip', 'accounts': 'https://cdn.tse.jus.br/acc2024.zip'}
+        mun_election = normalize_election(mun_candidates, mun_revenues, mun_expenses, 2024, urls, max_vereador_candidates=1)
+        validate_election(mun_election)
+        self.assertEqual(mun_election['scope'], 'municipal')
+        self.assertEqual(len(mun_election['candidates']), 2)
+        self.assertEqual(len(mun_election['aggregatedCandidates']), 1)
+        self.assertEqual(mun_election['aggregatedCandidates'][0]['candidacyCount'], 1)
+        self.assertEqual(mun_election['aggregatedCandidates'][0]['totalRevenueCents'], 200000)
+        self.assertEqual(mun_election['candidates'][0]['municipality'], 'SÃO PAULO')
+        self.assertEqual(mun_election['candidates'][0]['municipalityCode'], '71072')
+
+        hist_candidates = [
+            {'SEQUENCIAL_CANDIDATO': '140001', 'DESCRICAO_CARGO': 'SENADOR', 'NOME_CANDIDATO': 'SENADOR HISTORICO',
+             'NOME_URNA_CANDIDATO': 'SENADOR 2014', 'NUMERO_CANDIDATO': '456', 'SIGLA_PARTIDO': 'PSDB',
+             'UF': 'MG', 'DESC_SIT_TOT_TURNO': 'ELEITO'}
+        ]
+        hist_revenues = [
+            {'SEQUENCIAL_CANDIDATO': '140001', 'DESCRICAO_CARGO': 'SENADOR',
+             'DESC_ORIGEM_RECEITA': 'Recursos de partido político', 'FONTE_RECURSO': 'Fundo Partidário',
+             'VALOR_RECEITA': '300000,00'}
+        ]
+        hist_expenses = [
+            {'SEQUENCIAL_CANDIDATO': '140001', 'DESCRICAO_CARGO': 'SENADOR',
+             'DESC_TIPO_DESPESA': 'Publicidade por jornais e revistas',
+             'CPF_CNPJ_FORNECEDOR': '98765432000188', 'NOME_FORNECEDOR': 'EDITORA MG',
+             'VALOR_DESPESA': '250000,00'}
+        ]
+        hist_election = normalize_election(hist_candidates, hist_revenues, hist_expenses, 2014, urls)
+        validate_election(hist_election)
+        self.assertEqual(hist_election['scope'], 'geral')
+        self.assertEqual(hist_election['candidates'][0]['partyFundCents'], 30000000)
+        self.assertEqual(hist_election['suppliers']['rows'][0]['supplierKey'], '98765432000188')
+
+
+
+        hist_candidates = [
+            {'SEQUENCIAL_CANDIDATO': '140001', 'DESCRICAO_CARGO': 'SENADOR', 'NOME_CANDIDATO': 'SENADOR HISTORICO',
+             'NOME_URNA_CANDIDATO': 'SENADOR 2014', 'NUMERO_CANDIDATO': '456', 'SIGLA_PARTIDO': 'PSDB',
+             'UF': 'MG', 'DESC_SIT_TOT_TURNO': 'ELEITO'}
+        ]
+        hist_revenues = [
+            {'SEQUENCIAL_CANDIDATO': '140001', 'DESCRICAO_CARGO': 'SENADOR',
+             'DESC_ORIGEM_RECEITA': 'Recursos de partido político', 'FONTE_RECURSO': 'Fundo Partidário',
+             'VALOR_RECEITA': '300000,00'}
+        ]
+        hist_expenses = [
+            {'SEQUENCIAL_CANDIDATO': '140001', 'DESCRICAO_CARGO': 'SENADOR',
+             'DESC_TIPO_DESPESA': 'Publicidade por jornais e revistas',
+             'CPF_CNPJ_FORNECEDOR': '98765432000188', 'NOME_FORNECEDOR': 'EDITORA MG',
+             'VALOR_DESPESA': '250000,00'}
+        ]
+        hist_election = normalize_election(hist_candidates, hist_revenues, hist_expenses, 2014, urls)
+        validate_election(hist_election)
+        self.assertEqual(hist_election['scope'], 'geral')
+        self.assertEqual(hist_election['candidates'][0]['partyFundCents'], 30000000)
+        self.assertEqual(hist_election['suppliers']['rows'][0]['supplierKey'], '98765432000188')
 
 
 if __name__ == '__main__':

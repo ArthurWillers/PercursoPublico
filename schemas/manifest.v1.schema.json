@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "title": "Manifesto auditável v1",
   "type": "object",
   "required": [
@@ -16,7 +16,7 @@
   ],
   "properties": {
     "schemaVersion": {
-      "const": "1.2.0"
+      "const": "1.3.0"
     },
     "generatedAt": {
       "type": "string",

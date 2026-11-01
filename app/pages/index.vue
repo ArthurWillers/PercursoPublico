@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { periodQuery } from '~/utils/period'
-import { brazilianStates, months, categoryColors, formatMoney, formatCompactMoney } from '~/utils/financial'
+import { brazilianStates, months, categoryColors, formatMoney, formatCompactMoney, calculateMedianCents } from '~/utils/financial'
 
 const { manifest, years, filters, resetFilters, error, pending, retry, periodTimeline, periodLabel, requestedYears,
   chamberMembers, partyOptions, rows, visibleMembers: allMembers, coverage } = useFinancialData()
@@ -11,6 +11,12 @@ const periods = [
   { value: 'q1', label: '1º trimestre' }, { value: 'q2', label: '2º trimestre' },
   { value: 'q3', label: '3º trimestre' }, { value: 'q4', label: '4º trimestre' }
 ]
+const mobileFiltersOpen = ref(false)
+const secondaryFilterCount = computed(() =>
+  (filters.status !== 'em-exercicio' ? 1 : 0)
+  + (filters.state ? 1 : 0)
+  + (filters.party ? 1 : 0)
+)
 const visibleMembers = computed(() => allMembers.value.filter(member => member.cents !== null)
   .map(member => ({ ...member, cents: member.cents ?? 0 })))
 const stateOptions = computed(() => {
@@ -29,6 +35,7 @@ const trendItems = computed(() => filters.period === 'historico'
 const totalCents = computed(() => rows.value.reduce((sum, row) => sum + row.cents, 0))
 const maximumTrendTotal = computed(() => Math.max(...trendItems.value.map(item => Math.abs(item.cents)), 1))
 const averageCents = computed(() => visibleMembers.value.length ? Math.round(totalCents.value / visibleMembers.value.length) : 0)
+const medianCents = computed(() => calculateMedianCents(visibleMembers.value.map(member => member.cents)))
 const stateCount = computed(() => new Set(visibleMembers.value.map(member => member.state).filter(Boolean)).size)
 const categoryTotals = computed(() => {
   const totals = new Map<string, number>()
@@ -45,9 +52,15 @@ const partyRankings = computed(() => {
 const rankMaximum = computed(() => Math.max(...rankedMembers.value.map(member => member.cents), 1))
 const partyRankMaximum = computed(() => Math.max(...partyRankings.value.map(party => party.cents), 1))
 const reversePartyRanking = ref(false)
-const displayedPartyRankings = computed(() => reversePartyRanking.value ? [...partyRankings.value].reverse() : partyRankings.value)
+const showAllParties = ref(false)
+const displayedPartyRankings = computed(() => {
+  const ordered = reversePartyRanking.value ? [...partyRankings.value].reverse() : partyRankings.value
+  return showAllParties.value ? ordered : ordered.slice(0, 10)
+})
 const reverseRanking = ref(false)
+const showMoreMembers = ref(false)
 const displayedMembers = computed(() => reverseRanking.value ? [...rankedMembers.value].reverse() : rankedMembers.value)
+const memberSliceLimit = computed(() => showMoreMembers.value ? 15 : 5)
 const activeFilters = computed(() => filters.status !== 'em-exercicio' || filters.period !== 'ano' || Boolean(filters.state || filters.party || filters.search))
 function memberRoute(id: string) {
   return { path: `/gastos/${id.replace(':', '-')}`, query: periodQuery(filters) }
@@ -56,6 +69,9 @@ function selectChamber(chamber: 'deputados' | 'senadores') {
   filters.chamber = chamber
   filters.party = ''
   filters.state = ''
+}
+function togglePartyFilter(party: string) {
+  filters.party = filters.party === party ? '' : party
 }
 function formatPercent(value: number) {
   return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 }).format(value)
@@ -120,7 +136,10 @@ useSeoMeta({ title: 'Gastos da cota parlamentar | Parlamentares', description: '
         </div>
       </fieldset>
 
-      <label class="filter-field">
+      <label
+        class="filter-field filter-collapsible"
+        :class="{ 'is-open': mobileFiltersOpen || secondaryFilterCount > 0 }"
+      >
         <span>Situação atual</span>
         <select v-model="filters.status">
           <option value="em-exercicio">Em exercício</option>
@@ -162,7 +181,27 @@ useSeoMeta({ title: 'Gastos da cota parlamentar | Parlamentares', description: '
         </select>
       </label>
 
-      <label class="filter-field">
+      <button
+        type="button"
+        class="mobile-filter-toggle"
+        :aria-expanded="mobileFiltersOpen || secondaryFilterCount > 0"
+        @click="mobileFiltersOpen = !mobileFiltersOpen"
+      >
+        <UIcon
+          name="i-lucide-sliders-horizontal"
+          aria-hidden="true"
+        />
+        <span>{{ mobileFiltersOpen ? 'Ocultar filtros' : 'Estado, partido e situação' }}</span>
+        <span
+          v-if="secondaryFilterCount"
+          class="filter-badge"
+        >{{ secondaryFilterCount }}</span>
+      </button>
+
+      <label
+        class="filter-field filter-collapsible"
+        :class="{ 'is-open': mobileFiltersOpen || secondaryFilterCount > 0 }"
+      >
         <span>Estado</span>
         <select
           v-model="filters.state"
@@ -177,7 +216,10 @@ useSeoMeta({ title: 'Gastos da cota parlamentar | Parlamentares', description: '
         </select>
       </label>
 
-      <label class="filter-field">
+      <label
+        class="filter-field filter-collapsible"
+        :class="{ 'is-open': mobileFiltersOpen || secondaryFilterCount > 0 }"
+      >
         <span>Partido</span>
         <select
           v-model="filters.party"
@@ -255,7 +297,7 @@ useSeoMeta({ title: 'Gastos da cota parlamentar | Parlamentares', description: '
         <article class="summary-item">
           <h2>Média por parlamentar</h2>
           <p>{{ visibleMembers.length ? formatMoney(averageCents) : '—' }}</p>
-          <span>no período selecionado</span>
+          <span>{{ visibleMembers.length ? `Mediana: ${formatMoney(medianCents)}` : 'no período selecionado' }}</span>
         </article>
       </section>
 
@@ -428,17 +470,26 @@ useSeoMeta({ title: 'Gastos da cota parlamentar | Parlamentares', description: '
             <ol
               v-if="partyRankings.length"
               class="compact-ranking-list party-ranking-list"
-              aria-label="Todos os partidos com despesas publicadas, ordenados por gasto"
+              aria-label="Partidos com despesas publicadas, ordenados por gasto"
             >
               <li
                 v-for="(party, index) in displayedPartyRankings"
                 :key="party.party"
+                :class="{ 'is-active-filter': filters.party === party.party }"
               >
                 <span
                   class="rank-number"
                   aria-hidden="true"
                 >{{ String(index + 1).padStart(2, '0') }}</span>
-                <span class="compact-rank-name">{{ party.party }}</span>
+                <button
+                  type="button"
+                  class="compact-rank-name compact-rank-button"
+                  :aria-pressed="filters.party === party.party"
+                  :title="filters.party === party.party ? 'Remover filtro deste partido' : `Filtrar painel pelo partido ${party.party}`"
+                  @click="togglePartyFilter(party.party)"
+                >
+                  <strong>{{ party.party }}</strong>
+                </button>
                 <span
                   class="compact-rank-track"
                   aria-hidden="true"
@@ -452,6 +503,18 @@ useSeoMeta({ title: 'Gastos da cota parlamentar | Parlamentares', description: '
             >
               Sem partidos neste recorte.
             </p>
+            <button
+              v-if="partyRankings.length > 10"
+              type="button"
+              class="ranking-expand-btn"
+              @click="showAllParties = !showAllParties"
+            >
+              {{ showAllParties ? 'Mostrar top 10 partidos' : `Ver todos os ${partyRankings.length} partidos` }}
+              <UIcon
+                :name="showAllParties ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+                aria-hidden="true"
+              />
+            </button>
           </section>
 
           <section
@@ -487,7 +550,7 @@ useSeoMeta({ title: 'Gastos da cota parlamentar | Parlamentares', description: '
               class="compact-ranking-list"
             >
               <li
-                v-for="(member, index) in displayedMembers.slice(0, 5)"
+                v-for="(member, index) in displayedMembers.slice(0, memberSliceLimit)"
                 :key="member.id"
               >
                 <span
@@ -514,13 +577,34 @@ useSeoMeta({ title: 'Gastos da cota parlamentar | Parlamentares', description: '
             >
               Sem parlamentares neste recorte.
             </p>
-            <NuxtLink
-              class="text-link"
-              to="/gastos"
-            >Ver todos os parlamentares <UIcon
-              name="i-lucide-arrow-right"
-              aria-hidden="true"
-            /></NuxtLink>
+            <div class="ranking-card-actions">
+              <button
+                v-if="displayedMembers.length > 5"
+                type="button"
+                class="ranking-expand-btn"
+                @click="showMoreMembers = !showMoreMembers"
+              >
+                {{ showMoreMembers ? 'Mostrar top 5' : 'Expandir top 15' }}
+                <UIcon
+                  :name="showMoreMembers ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+                  aria-hidden="true"
+                />
+              </button>
+              <NuxtLink
+                class="text-link"
+                :to="{ path: '/gastos', query: periodQuery(filters) }"
+              >Ver todos ({{ displayedMembers.length }}) <UIcon
+                name="i-lucide-arrow-right"
+                aria-hidden="true"
+              /></NuxtLink>
+              <NuxtLink
+                class="text-link"
+                :to="{ path: '/gastos', query: { ...periodQuery(filters), visao: 'fornecedores' } }"
+              >Maiores fornecedores <UIcon
+                name="i-lucide-building-2"
+                aria-hidden="true"
+              /></NuxtLink>
+            </div>
           </section>
         </div>
       </section>
@@ -541,7 +625,7 @@ useSeoMeta({ title: 'Gastos da cota parlamentar | Parlamentares', description: '
           </h2>
           <p>O Fundo Partidário e o FEFC aparecem em prestações de contas do TSE. Eles não entram no total individual de gastos parlamentares.</p>
         </div>
-        <NuxtLink to="/fontes">Entenda as fontes <UIcon
+        <NuxtLink to="/eleicoes">Consultar eleições e TSE <UIcon
           name="i-lucide-arrow-right"
           aria-hidden="true"
         /></NuxtLink>

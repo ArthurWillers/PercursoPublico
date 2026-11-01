@@ -9,12 +9,15 @@ Consulta estática de informações financeiras públicas de deputados federais 
 - Fotos em URLs oficiais, com alternativa por iniciais; histórico de filiação e limites individuais de mandato quando verificáveis.
 - Filtro de situação atual, com “Em exercício” por padrão e “Todos os perfis” para incluir históricos. Usa o cadastro oficial na coleta; escolher um ano de despesas não reconstrói a composição da Casa naquele ano.
 - Período personalizado por mês/ano inicial e final, inclusivos, compartilhável na URL e preservado ao abrir um perfil. Permite atravessar anos e filtrar partidos, estados e situação atual.
-- Visão geral, rankings por Casa/ano/período e partido histórico, busca individual, fornecedores por CPF/CNPJ, categorias originais e despesas paginadas com documento/fonte.
+- Visão geral, rankings por Casa/ano/período e partido histórico, busca individual, índice global de fornecedores por CPF/CNPJ entre parlamentares, categorias originais e despesas paginadas com documento/fonte, glosas e detalhamento.
+- Consulta cadastral opcional de CNPJ no navegador sob ação explícita do usuário (via BrasilAPI / Receita Federal), identificada como enriquecimento de terceiro e sem alterar o dado oficial.
 - Recursos fora da cota do Senado publicados por código parlamentar em totais anuais separados: diárias, passagens e demais categorias retornadas pela fonte. Não são somados à cota nem rateados por mês, trimestre ou mandato.
+- Dados eleitorais do TSE em seção própria (`/eleicoes`) para Eleições Gerais (2010, 2014, 2018, 2022, 2026 — Deputado Federal e Senador) e Eleições Municipais (2008, 2012, 2016, 2020, 2024 — Prefeito e Vereador, com filtro por município): receitas por origem (FEFC, Fundo Partidário, doações de pessoas físicas, recursos próprios), despesas contratadas, resultado eleitoral, resumo partidário e cruzamento por CPF/CNPJ validado entre fornecedores de campanha e fornecedores da cota parlamentar, mantendo os valores de campanha e mandato estritamente separados.
+- Dados eleitorais do TSE em seção própria (`/eleicoes`) para Eleições Gerais (2010, 2014, 2018, 2022, 2026 — Deputado Federal e Senador) e Eleições Municipais (2008, 2012, 2016, 2020, 2024 — Prefeito e Vereador, com filtro por município): receitas por origem (FEFC, Fundo Partidário, doações de pessoas físicas, recursos próprios), despesas contratadas, resultado eleitoral, resumo partidário e cruzamento por CPF/CNPJ validado entre fornecedores de campanha e fornecedores da cota parlamentar, mantendo os valores de campanha e mandato estritamente separados.
 - Contratos JSON versionados, valores em centavos inteiros, auditoria de fontes/horários/checksums e reconciliação de agregados com detalhes.
 - Pipeline Python sem dependências externas; testes offline; GitHub Actions coleta, valida, compacta, gera e publica automaticamente no GitHub Pages duas vezes por mês.
 
-**Ainda não integrado:** remuneração/subsídio, outros recursos da Câmara, assistência à saúde, contas partidárias/eleitorais do TSE e enriquecimento cadastral de fornecedores. Não foi validada uma ligação por identificador entre folhas remuneratórias e os perfis. Não inferimos pagamentos pelo salário tabelado nem juntamos folhas por nome. Valores ausentes ou não individualizados não são zero.
+**Ainda não integrado:** remuneração/subsídio, outros recursos da Câmara, assistência à saúde e prestação anual de contas partidárias do TSE. Não foi validada uma ligação por identificador entre folhas remuneratórias e os perfis. Não inferimos pagamentos pelo salário tabelado nem juntamos folhas por nome. Valores ausentes ou não individualizados não são zero.
 
 Não há publicação Cloudflare nem analytics configurados. Proposições, votações e autenticação estão fora do escopo.
 
@@ -52,6 +55,9 @@ pnpm check                              # lint, tipos, integridade e generate
 - `members.json`: cadastro resumido para listagens.
 - `members/{Casa:id}.json`: perfil, histórico e recursos anuais separados quando disponíveis.
 - `summary-{ano}.json`: agregados por parlamentar, competência, partido histórico, categoria e elegibilidade ao mandato.
+- `suppliers-{ano}.json`: agregados anuais de fornecedores identificados por CPF/CNPJ e parlamentar, reconciliados com os detalhes e mantendo sem identificação separados.
+- `elections-{ano}.json`: candidaturas das Eleições Gerais (Deputado Federal e Senador) e Municipais (Prefeito e Vereador) do TSE, receitas por origem (FEFC, Fundo Partidário, pessoas físicas, recursos próprios), despesas contratadas, agregados partidários e fornecedores de campanha.
+- `elections-{ano}.json`: candidaturas das Eleições Gerais (Deputado Federal e Senador) e Municipais (Prefeito e Vereador) do TSE, receitas por origem (FEFC, Fundo Partidário, pessoas físicas, recursos próprios), despesas contratadas, agregados partidários e fornecedores de campanha.
 - `expenses/{Casa:id}/{ano}.json`: detalhes normalizados. Arquivo vazio significa nenhuma linha publicada para esse cadastro/ano na fonte coletada, não comprovação de gasto zero.
 - `manifest.json`: versão do schema, cobertura, URLs e horários de coleta ISO 8601 com fuso, checksums de entradas e arquivos publicados e IDs das rotas.
 
@@ -71,7 +77,7 @@ Categorias originais não são convertidas entre Casas. Categorias ausentes no S
 
 O recorte individual de mandato usa o início do exercício informado pela Casa e o fim disponível daquele mandato, com cobertura parcial quando iniciado antes do primeiro ano coletado, em andamento ou com meses de fronteira incompletos. Como a competência só identifica o mês, meses que não estão inteiramente dentro dos limites ficam de fora. Não há ranking de mandatos individuais com durações diferentes. Rankings usam a mesma Casa, ano, período e fonte; apenas quem possui registros entra na ordenação. Não medem qualidade ou eficiência parlamentar.
 
-Os recursos anuais do Senado usam o código parlamentar na URL oficial. Um HTTP 404 nesse endpoint individual significa indisponibilidade para o cadastro, sem converter em zero; erros transitórios impedem publicação. Saúde não individualizada, remuneração sem vínculo validado e TSE ficam fora desses totais. O TSE terá seção própria, sem atribuição a gastos individuais do mandato.
+Os recursos anuais do Senado usam o código parlamentar na URL oficial. Um HTTP 404 nesse endpoint individual significa indisponibilidade para o cadastro, sem converter em zero; erros transitórios impedem publicação. Saúde não individualizada e remuneração sem vínculo validado ficam fora desses totais. Os dados eleitorais do TSE (`consulta_cand`, `receitas_candidatos` e `despesas_contratadas_candidatos`) aparecem em `/eleicoes` com identificador próprio (`tse:{ano}:{sq_candidato}`), separados dos gastos do mandato; o cruzamento entre fornecedores de campanha e de cota parlamentar usa exclusivamente CPF (11 dígitos) ou CNPJ (14 dígitos) validados, sem juntar pessoas ou empresas por nome. Quando o pacote de uma eleição futura ou histórica não está publicado no CDN do TSE, a cobertura registra a indisponibilidade explícita sem converter em zero.
 
 A página `/fontes` mostra cobertura e regras. “Coletado” confirma leitura integral da fonte disponível, não que a instituição já publicou todos os gastos: o ano corrente é parcial e históricos podem receber correções.
 
@@ -102,5 +108,6 @@ Para ativar a publicação, no repositório abra **Settings → Pages → Build 
 - [Câmara — dados abertos](https://dadosabertos.camara.leg.br/swagger/api.html) e [campos da CEAP](https://dadosabertos.camara.leg.br/howtouse/2023-12-26-dados-ceap.html).
 - [Senado — catálogo administrativo](https://www12.senado.leg.br/dados-abertos/conjuntos?grupo=senadores&portal=Administrativo) e [API administrativa](https://adm.senado.gov.br/adm-dadosabertos/swagger-ui/index.html).
 - [Senado — cadastros, filiações e mandatos](https://legis.senado.leg.br/dadosabertos/docs/).
+- [TSE — Repositório de Dados Eleitorais e DivulgaCandContas](https://dadosabertos.tse.jus.br/).
 
 Leia [AGENTS.md](./AGENTS.md) antes de alterar o projeto. Licença MIT, com atribuição preservada do template Nuxt UI.

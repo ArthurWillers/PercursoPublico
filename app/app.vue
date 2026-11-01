@@ -37,8 +37,10 @@ useHead({
           class="main-nav"
           aria-label="Navegação principal"
         >
-          <NuxtLink to="/#resumo">Visão geral</NuxtLink>
-          <NuxtLink to="/gastos">Parlamentares</NuxtLink>
+          <NuxtLink to="/">Visão geral</NuxtLink>
+          <NuxtLink :to="{ path: '/gastos' }">Parlamentares</NuxtLink>
+          <NuxtLink :to="{ path: '/gastos', query: { visao: 'fornecedores' } }">Fornecedores</NuxtLink>
+          <NuxtLink to="/eleicoes">Eleições (TSE)</NuxtLink>
           <NuxtLink to="/fontes">Fontes e método</NuxtLink>
         </nav>
       </header>

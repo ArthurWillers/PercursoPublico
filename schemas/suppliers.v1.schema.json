@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schemaVersion": "1.3.0",
+  "title": "Agregados anuais de fornecedores por parlamentar v1",
+  "type": "object",
+  "required": [
+    "year",
+    "unidentified",
+    "rows"
+  ],
+  "properties": {
+    "year": {
+      "type": "integer",
+      "minimum": 2008
+    },
+    "unidentified": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "memberId",
+          "year",
+          "cents",
+          "count"
+        ],
+        "properties": {
+          "memberId": {
+            "type": "string",
+            "pattern": "^(camara|senado):[0-9]+$"
+          },
+          "year": {
+            "type": "integer",
+            "minimum": 2008
+          },
+          "cents": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "supplierKey",
+          "supplier",
+          "supplierId",
+          "memberId",
+          "year",
+          "cents",
+          "count"
+        ],
+        "properties": {
+          "supplierKey": {
+            "type": "string",
+            "pattern": "^([0-9]{11}|[0-9]{14})$"
+          },
+          "supplier": {
+            "type": "string",
+            "minLength": 1
+          },
+          "supplierId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "memberId": {
+            "type": "string",
+            "pattern": "^(camara|senado):[0-9]+$"
+          },
+          "year": {
+            "type": "integer",
+            "minimum": 2008
+          },
+          "cents": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
+

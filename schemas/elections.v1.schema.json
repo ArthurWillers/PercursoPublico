@@ -1,0 +1,278 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schemaVersion": "1.3.0",
+  "title": "Prestação de contas eleitorais TSE (Eleições Gerais e Municipais) v1",
+  "type": "object",
+  "required": [
+    "year",
+    "scope",
+    "status",
+    "sourceUrls",
+    "candidates",
+    "parties",
+    "suppliers"
+  ],
+  "properties": {
+    "year": {
+      "type": "integer",
+      "enum": [2008, 2010, 2012, 2014, 2016, 2018, 2020, 2022, 2024, 2026]
+    },
+    "scope": {
+      "enum": ["geral", "municipal"]
+    },
+    "status": {
+      "enum": ["collected", "unavailable"]
+    },
+    "reason": {
+      "type": ["string", "null"]
+    },
+    "fetchedAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "sourceUrls": {
+      "type": "object",
+      "required": ["candidates", "accounts"],
+      "properties": {
+        "candidates": { "type": "string", "format": "uri" },
+        "accounts": { "type": "string", "format": "uri" }
+      },
+      "additionalProperties": false
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "sqCandidato",
+          "year",
+          "office",
+          "name",
+          "ballotName",
+          "ballotNumber",
+          "party",
+          "state",
+          "municipality",
+          "municipalityCode",
+          "result",
+          "elected",
+          "totalRevenueCents",
+          "fefcCents",
+          "partyFundCents",
+          "individualCents",
+          "ownResourcesCents",
+          "otherRevenueCents",
+          "revenueCount",
+          "totalExpenseCents",
+          "expenseCount",
+          "topCategories"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^tse:[0-9]{4}:[0-9]+$"
+          },
+          "sqCandidato": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "year": {
+            "type": "integer",
+            "enum": [2008, 2010, 2012, 2014, 2016, 2018, 2020, 2022, 2024, 2026]
+          },
+          "office": {
+            "enum": ["deputado_federal", "senador", "prefeito", "vereador"]
+          },
+          "name": { "type": "string", "minLength": 1 },
+          "ballotName": { "type": "string", "minLength": 1 },
+          "ballotNumber": { "type": "string" },
+          "party": { "type": "string", "minLength": 1 },
+          "state": { "type": "string", "minLength": 2 },
+          "municipality": { "type": ["string", "null"] },
+          "municipalityCode": { "type": ["string", "null"] },
+          "result": { "type": "string", "minLength": 1 },
+          "elected": { "type": "boolean" },
+          "totalRevenueCents": { "type": "integer" },
+          "fefcCents": { "type": "integer" },
+          "partyFundCents": { "type": "integer" },
+          "individualCents": { "type": "integer" },
+          "ownResourcesCents": { "type": "integer" },
+          "otherRevenueCents": { "type": "integer" },
+          "revenueCount": { "type": "integer", "minimum": 0 },
+          "totalExpenseCents": { "type": "integer" },
+          "expenseCount": { "type": "integer", "minimum": 0 },
+          "topCategories": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["category", "cents", "count"],
+              "properties": {
+                "category": { "type": "string", "minLength": 1 },
+                "cents": { "type": "integer" },
+                "count": { "type": "integer", "minimum": 1 }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "aggregatedCandidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "party",
+          "office",
+          "state",
+          "year",
+          "candidacyCount",
+          "electedCount",
+          "totalRevenueCents",
+          "fefcCents",
+          "partyFundCents",
+          "individualCents",
+          "ownResourcesCents",
+          "otherRevenueCents",
+          "totalExpenseCents",
+          "expenseCount"
+        ],
+        "properties": {
+          "party": { "type": "string", "minLength": 1 },
+          "office": { "enum": ["vereador"] },
+          "state": { "type": "string", "minLength": 2 },
+          "year": { "type": "integer", "enum": [2008, 2012, 2016, 2020, 2024] },
+          "candidacyCount": { "type": "integer", "minimum": 1 },
+          "electedCount": { "type": "integer", "minimum": 0 },
+          "totalRevenueCents": { "type": "integer" },
+          "fefcCents": { "type": "integer" },
+          "partyFundCents": { "type": "integer" },
+          "individualCents": { "type": "integer" },
+          "ownResourcesCents": { "type": "integer" },
+          "otherRevenueCents": { "type": "integer" },
+          "totalExpenseCents": { "type": "integer" },
+          "expenseCount": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "parties": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "party",
+          "office",
+          "year",
+          "candidacyCount",
+          "electedCount",
+          "totalRevenueCents",
+          "fefcCents",
+          "partyFundCents",
+          "individualCents",
+          "ownResourcesCents",
+          "otherRevenueCents",
+          "totalExpenseCents",
+          "expenseCount"
+        ],
+        "properties": {
+          "party": { "type": "string", "minLength": 1 },
+          "office": { "enum": ["deputado_federal", "senador", "prefeito", "vereador"] },
+          "year": { "type": "integer", "enum": [2008, 2010, 2012, 2014, 2016, 2018, 2020, 2022, 2024, 2026] },
+          "candidacyCount": { "type": "integer", "minimum": 1 },
+          "electedCount": { "type": "integer", "minimum": 0 },
+          "totalRevenueCents": { "type": "integer" },
+          "fefcCents": { "type": "integer" },
+          "partyFundCents": { "type": "integer" },
+          "individualCents": { "type": "integer" },
+          "ownResourcesCents": { "type": "integer" },
+          "otherRevenueCents": { "type": "integer" },
+          "totalExpenseCents": { "type": "integer" },
+          "expenseCount": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "suppliers": {
+      "type": "object",
+      "required": ["unidentified", "rows"],
+      "properties": {
+        "unidentified": {
+          "type": "object",
+          "required": ["cents", "count"],
+          "properties": {
+            "cents": { "type": "integer" },
+            "count": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "supplierKey",
+              "supplier",
+              "supplierId",
+              "year",
+              "cents",
+              "count",
+              "candidacyCount",
+              "offices",
+              "states",
+              "parties",
+              "topCandidates"
+            ],
+            "properties": {
+              "supplierKey": {
+                "type": "string",
+                "pattern": "^([0-9]{11}|[0-9]{14})$"
+              },
+              "supplier": { "type": "string", "minLength": 1 },
+              "supplierId": { "type": "string", "minLength": 1 },
+              "year": { "type": "integer", "enum": [2008, 2010, 2012, 2014, 2016, 2018, 2020, 2022, 2024, 2026] },
+              "cents": { "type": "integer" },
+              "count": { "type": "integer", "minimum": 1 },
+              "candidacyCount": { "type": "integer", "minimum": 1 },
+              "offices": {
+                "type": "array",
+                "items": { "enum": ["deputado_federal", "senador", "prefeito", "vereador"] }
+              },
+              "states": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "parties": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "topCandidates": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["id", "ballotName", "party", "state", "office", "cents", "count"],
+                  "properties": {
+                    "id": { "type": "string" },
+                    "ballotName": { "type": "string" },
+                    "party": { "type": "string" },
+                    "state": { "type": "string" },
+                    "municipality": { "type": ["string", "null"] },
+                    "office": { "enum": ["deputado_federal", "senador", "prefeito", "vereador"] },
+                    "cents": { "type": "integer" },
+                    "count": { "type": "integer", "minimum": 1 }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

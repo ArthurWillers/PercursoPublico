@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { matchesPeriod, normalizeMonthRange, periodQuery, selectedYears } from '../app/utils/period.ts'
+import { calculateMedianCents, cleanSupplierDigits, formatSupplierIdentifier, isValidCnpj } from '../app/utils/financial.ts'
 
 test('intervalo por competência inclui as fronteiras e atravessa anos', () => {
   const selection = { period: 'personalizado', year: 2026, startMonth: '2019-11', endMonth: '2020-02' }
@@ -28,4 +29,16 @@ test('ano, trimestre e mandato preservam seus próprios limites', () => {
   assert.equal(matchesPeriod({ year: 2025, month: 7, inMandate: true }, selection), false)
   assert.equal(matchesPeriod({ year: 2010, month: 4, inMandate: false }, { ...selection, period: 'mandato' }), false)
   assert.equal(matchesPeriod({ year: 2010, month: 4, inMandate: true }, { ...selection, period: 'mandato' }), true)
+})
+
+test('identificadores de fornecedor e mediana financeira preservam invariantes', () => {
+  assert.equal(cleanSupplierDigits('12.345.678/0001-99'), '12345678000199')
+  assert.equal(cleanSupplierDigits('00000000000001'), null)
+  assert.equal(cleanSupplierDigits('123'), null)
+  assert.equal(isValidCnpj('12.345.678/0001-99'), '12345678000199')
+  assert.equal(isValidCnpj('123.456.789-01'), null)
+  assert.equal(formatSupplierIdentifier('12345678000199'), '12.345.678/0001-99')
+  assert.equal(calculateMedianCents([]), 0)
+  assert.equal(calculateMedianCents([100, 500, 200]), 200)
+  assert.equal(calculateMedianCents([100, 200, 300, 400]), 250)
 })
