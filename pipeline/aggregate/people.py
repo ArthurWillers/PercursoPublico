@@ -47,6 +47,11 @@ def assemble_people(members, elections, member_cpfs, candidate_cpfs):
     return sorted(people.values(), key=lambda row: (row['name'].casefold(), row['id']))
 
 
+def person_photo_path(person):
+    """Foto oficial local mais recente do TSE; só é usada quando não há foto de cadastro parlamentar."""
+    return next((row['photoPath'] for row in person['candidacies'] if row.get('photoPath')), None)
+
+
 def candidate_identifiers(rows, year, published_ids):
     identities, conflicts = {}, set()
     for row in rows:
@@ -121,6 +126,7 @@ def write_people(directory, client):
             'candidateIds': [row['id'] for row in person['candidacies']],
             'current': any(row['current'] for row in person['members']),
             'photoUrl': next((row['photoUrl'] for row in person['members'] if row['photoUrl']), None),
+            'photoPath': person_photo_path(person),
             'years': sorted({row['year'] for row in person['candidacies']}, reverse=True),
             'offices': sorted({row['office'] for row in person['candidacies']}),
             'states': sorted({row['state'] for row in person['members'] + person['candidacies']}),

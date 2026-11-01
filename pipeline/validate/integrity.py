@@ -116,6 +116,11 @@ def validate_election(election):
             raise ValueError('Candidatura fora da cobertura declarada de cargos')
         if scope == 'municipal' and not cand.get('municipality'):
             raise ValueError(f'Candidatura municipal sem município identificado: {expected_id}')
+        for field in ('candidacyStatus', 'candidacyDetail'):
+            if cand.get(field) is not None and (not isinstance(cand[field], str) or not cand[field].strip()):
+                raise ValueError(f'Situação da candidatura inválida: {expected_id}')
+        if cand.get('photoPath') is not None and cand['photoPath'] != f'photos/{year}/{sq}.jpg':
+            raise ValueError(f'Caminho de foto incompatível com a candidatura: {expected_id}')
         for field in (
             'totalRevenueCents', 'fefcCents', 'partyFundCents',
             'individualCents', 'ownResourcesCents', 'otherRevenueCents', 'totalExpenseCents'

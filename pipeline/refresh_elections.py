@@ -10,7 +10,7 @@ from pathlib import Path
 
 from pipeline.collect import verify_output, write_json
 from pipeline.http import Client
-from pipeline.sources import tse
+from pipeline.sources import tse, tse_photos
 from pipeline.validate.integrity import validate_election
 
 
@@ -39,6 +39,8 @@ def refresh_elections(destination, client, years, include_people=False):
                 raise ValueError(f'Coleta TSE {year} indisponível; preservar versão válida anterior')
             path = staging / f'elections-{year}.json'
             path.unlink(missing_ok=True)
+            for relative in tse_photos.stage_photos(client, election, staging):
+                manifest['files'][relative] = hashlib.sha256((staging / relative).read_bytes()).hexdigest()
             write_json(path, election)
             coverage[year] = {
                 key: election.get(key) for key in ('year', 'scope', 'status', 'reason', 'fetchedAt', 'sourceUrls')

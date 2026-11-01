@@ -128,6 +128,9 @@ export interface ElectionCandidate {
   municipalityCode?: string | null
   result: string
   elected: boolean
+  candidacyStatus?: string | null
+  candidacyDetail?: string | null
+  photoPath?: string | null
   totalRevenueCents: number
   fefcCents: number
   partyFundCents: number

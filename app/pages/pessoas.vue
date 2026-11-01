@@ -2,10 +2,11 @@
 import { formatElectionOffice } from '~/composables/useElectionData'
 import { divulgaCandUrl, hasDirectElectionLink } from '~/utils/election'
 import { formatMoney, formatDate, normalizeSearch, brazilianStates } from '~/utils/financial'
+import { filterAndRankPeople } from '~/utils/peopleSearch'
 
 definePageMeta({ key: 'people-directory' })
 
-const { people, searchTerms, search, selectPerson, selectedId, modalOpen, indexRequest, detailRequest } = usePeopleData()
+const { people, searchIndex, search, selectPerson, selectedId, modalOpen, indexRequest, detailRequest } = usePeopleData()
 const { data: indexData, status: indexStatus, error: indexError } = indexRequest
 const { data: person, status: detailStatus, error: detailError } = detailRequest
 const route = useRoute()
@@ -31,11 +32,9 @@ function restorePersonFocus() {
 const page = ref(1)
 const pageSize = 24
 const query = computed(() => normalizeSearch(search.value))
-const filteredPeople = computed(() => people.value.filter((person, index) =>
-  (!query.value || searchTerms.value[index]?.includes(query.value))
-  && (!state.value || person.states.includes(state.value))
-  && (!office.value || person.offices.some(value => value === office.value))
-))
+const filteredPeople = computed(() =>
+  filterAndRankPeople(searchIndex.value, people.value, query.value, state.value, office.value)
+)
 const pageCount = computed(() => Math.max(1, Math.ceil(filteredPeople.value.length / pageSize)))
 const visiblePeople = computed(() => filteredPeople.value.slice((page.value - 1) * pageSize, page.value * pageSize))
 const view = computed({
@@ -167,7 +166,7 @@ useSeoMeta({ title: 'Pessoas, mandatos e histórico eleitoral', description: 'En
         role="status"
       >
         <h2>{{ filteredPeople.length.toLocaleString('pt-BR') }} {{ filteredPeople.length === 1 ? 'pessoa encontrada' : 'pessoas encontradas' }}</h2>
-        <span>Mandatos em exercício aparecem primeiro</span>
+        <span>{{ search ? 'Ordenado por relevância da busca' : 'Mandatos em exercício aparecem primeiro' }}</span>
       </div>
       <ul
         v-if="visiblePeople.length"
@@ -186,6 +185,7 @@ useSeoMeta({ title: 'Pessoas, mandatos e histórico eleitoral', description: 'En
             <MemberAvatar
               :name="entry.name"
               :photo-url="entry.photoUrl"
+              :photo-path="entry.photoPath"
             />
             <span class="people-result-identity">
               <strong>{{ entry.name }}</strong>
@@ -278,6 +278,7 @@ useSeoMeta({ title: 'Pessoas, mandatos e histórico eleitoral', description: 'En
             <MemberAvatar
               :name="person.name"
               :photo-url="person.members.find(member => member.photoUrl)?.photoUrl ?? null"
+              :photo-path="person.photoPath ?? person.candidacies.find(candidate => candidate.photoPath)?.photoPath ?? null"
             />
             <div><p>{{ person.candidacies.length }} {{ person.candidacies.length === 1 ? 'candidatura vinculada' : 'candidaturas vinculadas' }} · {{ person.members.length }} {{ person.members.length === 1 ? 'cadastro parlamentar' : 'cadastros parlamentares' }}</p><small>Campanhas e mandatos têm valores separados. Não há soma entre eleições.</small></div>
           </header>
@@ -367,14 +368,31 @@ useSeoMeta({ title: 'Pessoas, mandatos e histórico eleitoral', description: 'En
               class="person-record"
             >
               <div class="person-record-heading">
-                <h3>{{ candidate.year }} · {{ formatElectionOffice(candidate.office) }}</h3><UBadge
-                  :color="candidate.elected ? 'primary' : 'neutral'"
-                  variant="subtle"
-                >
-                  {{ candidate.result }}
-                </UBadge>
+                <h3>{{ candidate.year }} · {{ formatElectionOffice(candidate.office) }}</h3>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <UBadge
+                    v-if="candidate.candidacyStatus && candidate.candidacyStatus.toLowerCase() !== 'apto'"
+                    color="error"
+                    variant="subtle"
+                  >
+                    {{ candidate.candidacyStatus }}: {{ candidate.candidacyDetail || 'Não concorreu' }}
+                  </UBadge>
+                  <UBadge
+                    :color="candidate.elected ? 'primary' : 'neutral'"
+                    variant="subtle"
+                  >
+                    {{ candidate.candidacyStatus && candidate.candidacyStatus.toLowerCase() !== 'apto' ? 'Não participou do pleito' : candidate.result }}
+                  </UBadge>
+                </div>
               </div>
               <p>{{ candidate.ballotName }} · {{ candidate.party }} · {{ candidate.municipality ? `${candidate.municipality} / ` : '' }}{{ candidate.state }}</p>
+              <UAlert
+                v-if="candidate.candidacyStatus && candidate.candidacyStatus.toLowerCase() !== 'apto'"
+                color="warning"
+                variant="subtle"
+                title="Candidatura não participou da eleição final"
+                :description="`Registro no TSE com situação '${candidate.candidacyStatus}' (${candidate.candidacyDetail || 'indeferida'}). Os valores declarados refletem a prestação de contas entregue ao TSE antes da decisão judicial ou substituição da chapa.`"
+              />
               <dl class="person-election-money">
                 <div><dt>Receitas declaradas</dt><dd>{{ formatMoney(candidate.totalRevenueCents) }}</dd></div><div><dt>Despesas contratadas</dt><dd>{{ formatMoney(candidate.totalExpenseCents) }}</dd></div>
               </dl>

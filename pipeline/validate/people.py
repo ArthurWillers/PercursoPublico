@@ -41,6 +41,9 @@ def validate_people(directory):
         expected_photo = next((member['photoUrl'] for member in person['members'] if member['photoUrl']), None)
         if row['photoUrl'] != expected_photo or row['current'] != any(member['current'] for member in person['members']):
             raise ValueError('Foto ou situação parlamentar diverge da origem')
+        expected_photo_path = next((candidate['photoPath'] for candidate in person['candidacies'] if candidate.get('photoPath')), None)
+        if row.get('photoPath') != expected_photo_path or (expected_photo_path and not (directory / expected_photo_path).is_file()):
+            raise ValueError('Foto eleitoral do índice diverge ou não foi publicada')
         if row['offices'] != sorted({candidate['office'] for candidate in person['candidacies']}) or row['states'] != sorted({record['state'] for record in person['members'] + person['candidacies']}):
             raise ValueError('Filtros de cargo ou UF não reconciliam com os detalhes')
         for member in person['members']:

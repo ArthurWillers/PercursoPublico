@@ -10,7 +10,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from pipeline.http import Client
-from pipeline.sources import camara, senado, tse
+from pipeline.sources import camara, senado, tse, tse_photos
 from pipeline.aggregate.expenses import summarize, summarize_suppliers
 from pipeline.aggregate.people import write_people
 from pipeline.validate.people import validate_people
@@ -22,7 +22,7 @@ def write_json(path, value):
     path.write_text(json.dumps(value, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
 
 
-def publish(destination, members, records, summaries, metadata, year_batches=None, suppliers=None, elections=None, election_batches=None, sources_fn=None, people_fn=None):
+def publish(destination, members, records, summaries, metadata, year_batches=None, suppliers=None, elections=None, election_batches=None, sources_fn=None, people_fn=None, photo_fn=None):
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix='.financial-data-', dir=destination.parent))
     backup = destination.with_name('.data-previous')
@@ -54,9 +54,13 @@ def publish(destination, members, records, summaries, metadata, year_batches=Non
             gc.collect()
         if elections:
             for election_year, election_data in sorted(elections.items()):
+                if photo_fn is not None:
+                    photo_fn(election_data, staging)
                 write_json(staging / f'elections-{election_year}.json', election_data)
         if election_batches is not None:
             for election_year, election_data in election_batches:
+                if photo_fn is not None:
+                    photo_fn(election_data, staging)
                 write_json(staging / f'elections-{election_year}.json', election_data)
                 del election_data
                 gc.collect()
@@ -65,8 +69,8 @@ def publish(destination, members, records, summaries, metadata, year_batches=Non
         if sources_fn is not None:
             metadata['sources'] = sources_fn()
         write_json(staging / 'index.json', {key: value for key, value in metadata.items() if key != 'sources'})
-        metadata['files'] = {str(path.relative_to(staging)): hashlib.sha256(path.read_bytes()).hexdigest()
-                             for path in sorted(staging.rglob('*.json'))}
+        metadata['files'] = {path.relative_to(staging).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+                             for path in sorted([*staging.rglob('*.json'), *staging.glob('photos/*/*.jpg')])}
         metadata['profileIds'] = sorted(members)
         write_json(staging / 'manifest.json', metadata)
         verify_output(staging)
@@ -250,7 +254,8 @@ def main():
         year_batches=normalized_years(),
         election_batches=normalized_elections(),
         sources_fn=lambda: sorted(client.sources.values(), key=lambda row: row['url']),
-        people_fn=lambda directory: write_people(directory, client)
+        people_fn=lambda directory: write_people(directory, client),
+        photo_fn=lambda election, staging: tse_photos.stage_photos(client, election, staging)
     )
     print(f"Publicado localmente: {len(members)} perfis, {sum(row['records'] for row in coverage)} despesas validadas.", flush=True)
 

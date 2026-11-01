@@ -22,7 +22,8 @@ MUNICIPAL_ELECTION_YEARS = (2008, 2012, 2016, 2020, 2024)
 ELECTION_YEARS = (2008, 2010, 2012, 2014, 2016, 2018, 2020, 2022, 2024, 2026)
 MAX_VEREADOR_CANDIDATES = 2500
 MAX_ELECTION_SUPPLIERS = 1000
-CACHE_SCHEMA_TAG = 'v3-executivo'
+CACHE_SCHEMA_TAG = 'v4-situacao'
+MUNICIPAL_CACHE_SCHEMA_TAG = 'v3-situacao'
 
 GENERAL_OFFICES = {
     '1': 'presidente',
@@ -148,6 +149,11 @@ def _extract_municipality(row, office):
     return mun_name, mun_code
 
 
+def _normalize_candidacy_text(value):
+    text = _clean_field(value)
+    return text[:1].upper() + text[1:].lower() if text else None
+
+
 def _new_candidate_entry(sq, year, office, row, default_result):
     name = _first_field(row, 'NM_CANDIDATO', 'NOME_CANDIDATO', 'Nome candidato') or f'Candidatura {sq}'
     ballot_name = _first_field(row, 'NM_URNA_CANDIDATO', 'NOME_URNA_CANDIDATO') or name
@@ -172,6 +178,9 @@ def _new_candidate_entry(sq, year, office, row, default_result):
         'municipalityCode': municipality_code,
         'result': result_label,
         'elected': elected,
+        # Situação do registro (APTO, INAPTO, RENÚNCIA…). Ausente quando a candidatura só consta nas contas.
+        'candidacyStatus': _normalize_candidacy_text(_first_field(row, 'DS_SITUACAO_CANDIDATURA')),
+        'candidacyDetail': _normalize_candidacy_text(_first_field(row, 'DS_DETALHE_SITUACAO_CAND')),
         'totalRevenueCents': 0,
         'fefcCents': 0,
         'partyFundCents': 0,
@@ -494,6 +503,7 @@ _KEEP_COLUMNS = frozenset({
     'NM_UE', 'DS_UE', 'DESCRICAO_UE', 'NM_MUNICIPIO', 'Município', 'Municipio', 'Nome da UE',
     'SG_UE', 'SIGLA_UE', 'CD_MUNICIPIO', 'Número UE', 'Numero UE', 'Sigla da UE',
     'DS_SIT_TOT_TURNO', 'DESC_SIT_TOT_TURNO', 'DESC_SIT_CAND_TOT',
+    'DS_SITUACAO_CANDIDATURA', 'DS_DETALHE_SITUACAO_CAND',
     'VR_RECEITA', 'VALOR_RECEITA', 'Valor receita',
     'DS_ORIGEM_RECEITA', 'DESC_ORIGEM_RECEITA', 'TIPO_RECEITA', 'Tipo receita', 'DS_TITULO',
     'DS_FONTE_RECEITA', 'DS_FONTE_RECURSO', 'FONTE_RECURSO', 'Fonte recurso', 'DS_ESP_RECURSO',
@@ -774,7 +784,7 @@ def collect_election_year(client, year, mandate_supplier_keys=None):
     acc_url = accounts_url(year)
     cache_days = client.historical_cache_days(year)
 
-    cache_tag = 'v2' if year in MUNICIPAL_ELECTION_YEARS else CACHE_SCHEMA_TAG
+    cache_tag = MUNICIPAL_CACHE_SCHEMA_TAG if year in MUNICIPAL_ELECTION_YEARS else CACHE_SCHEMA_TAG
     cache_file = client.cache / f'tse-election-{year}-{cache_tag}.json.gz'
     cache_meta_file = client.cache / f'tse-election-{year}-{cache_tag}.meta.json'
     if cache_file.exists() and cache_meta_file.exists():

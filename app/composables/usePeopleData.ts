@@ -1,6 +1,9 @@
 import type { PeopleIndex, PersonDetail } from '~/types/people'
 import { fetchPublicJson } from '~/utils/fetchPublicJson'
 import { normalizeSearch } from '~/utils/financial'
+import { buildSearchablePerson, type SearchablePerson } from '~/utils/peopleSearch'
+
+export { type SearchablePerson } from '~/utils/peopleSearch'
 
 export function usePeopleData() {
   const route = useRoute()
@@ -13,6 +16,9 @@ export function usePeopleData() {
   })
   const people = computed(() => indexRequest.data.value?.people ?? [])
   const searchTerms = computed(() => people.value.map(person => normalizeSearch(person.aliases.join(' '))))
+  const searchIndex = computed<SearchablePerson[]>(() =>
+    people.value.map(person => buildSearchablePerson(person))
+  )
   const selectionRequested = computed(() => Boolean(route.query.pessoa || route.query.mandato || route.query.candidatura))
   const selectedId = computed(() => {
     if (typeof route.query.pessoa === 'string' && /^person:[a-f0-9]{32}$/.test(route.query.pessoa)) return route.query.pessoa
@@ -34,5 +40,5 @@ export function usePeopleData() {
       if (!open) void router.replace({ query: { ...route.query, pessoa: undefined, mandato: undefined, candidatura: undefined, aba: undefined, ano: undefined } })
     }
   })
-  return { people, searchTerms, search, selectPerson, selectedId, modalOpen, indexRequest, detailRequest }
+  return { people, searchTerms, searchIndex, search, selectPerson, selectedId, modalOpen, indexRequest, detailRequest }
 }

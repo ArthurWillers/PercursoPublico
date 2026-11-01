@@ -579,9 +579,13 @@ useSeoMeta({
                     <strong>{{ cand.ballotName }}</strong>
                     <span class="election-ballot-number">Nº {{ cand.ballotNumber }}</span>
                     <span
+                      v-if="cand.candidacyStatus && cand.candidacyStatus.toLowerCase() !== 'apto'"
+                      class="election-result-badge is-inapt"
+                    >{{ cand.candidacyStatus }}: {{ cand.candidacyDetail || 'Não concorreu' }}</span>
+                    <span
                       class="election-result-badge"
                       :class="{ 'is-elected': cand.elected, 'is-substitute': cand.result === 'Suplente' }"
-                    >{{ cand.result }}</span>
+                    >{{ cand.candidacyStatus && cand.candidacyStatus.toLowerCase() !== 'apto' ? 'Não participou do pleito' : cand.result }}</span>
                   </div>
                   <small>
                     {{ cand.party }} ·

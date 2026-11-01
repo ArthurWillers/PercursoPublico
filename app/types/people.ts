@@ -8,6 +8,7 @@ export interface PersonSummary {
   candidateIds: string[]
   current: boolean
   photoUrl: string | null
+  photoPath?: string | null
   years: number[]
   offices: ElectionOffice[]
   states: string[]
@@ -23,6 +24,7 @@ export interface PersonDetail {
   name: string
   aliases: string[]
   identityBasis: 'official-cpf' | 'source-record'
+  photoPath?: string | null
   members: Parliamentarian[]
   candidacies: ElectionCandidate[]
 }

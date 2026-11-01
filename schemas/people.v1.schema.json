@@ -22,6 +22,7 @@
           "states": { "type": "array", "items": { "type": "string" } },
           "candidacyCount": { "type": "integer", "minimum": 0 },
           "photoUrl": { "type": ["string", "null"] },
+          "photoPath": { "type": ["string", "null"] },
           "current": { "type": "boolean" }
         }
       }

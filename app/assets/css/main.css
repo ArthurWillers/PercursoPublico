@@ -3424,6 +3424,11 @@ select:focus-visible,
   color: var(--blue);
 }
 
+.election-result-badge.is-inapt {
+  background: var(--rose-soft, #fee2e2);
+  color: var(--rose, #b91c1c);
+}
+
 .election-fund-breakdown {
   margin-top: 6px;
   display: flex;
