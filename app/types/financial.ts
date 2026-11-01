@@ -2,8 +2,6 @@ export type Chamber = 'deputados' | 'senadores'
 export type ExpensePeriod = 'ano' | 'historico' | 'personalizado' | 'mandato' | 'q1' | 'q2' | 'q3' | 'q4'
 export type ElectionScope = 'geral' | 'municipal'
 export type ElectionOffice = 'deputado_federal' | 'senador' | 'prefeito' | 'vereador'
-export type ElectionScope = 'geral' | 'municipal'
-export type ElectionOffice = 'deputado_federal' | 'senador' | 'prefeito' | 'vereador'
 
 export interface Mandate {
   start: string
@@ -103,19 +101,6 @@ export interface Manifest {
   electionsCoverage?: Array<{
     year: number
     scope?: ElectionScope
-    status: 'collected' | 'unavailable'
-    reason?: string | null
-    fetchedAt?: string | null
-    sourceUrls: { candidates: string, accounts: string }
-    candidacies: number
-    totalRevenueCents: number
-    fefcCents: number
-    partyFundCents: number
-    totalExpenseCents: number
-  }>
-  electionYears?: number[]
-  electionsCoverage?: Array<{
-    year: number
     status: 'collected' | 'unavailable'
     reason?: string | null
     fetchedAt?: string | null

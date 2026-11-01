@@ -353,7 +353,7 @@ useSeoMeta({
         class="profile-total"
         aria-label="Resumo da cota parlamentar"
       >
-        <div class="profile-total-main">
+        <div>
           <span>Despesas líquidas publicadas da cota</span>
           <strong>{{ totalCents === null ? 'Sem registros no recorte' : formatMoney(totalCents) }}</strong>
           <small>

@@ -45,6 +45,27 @@ jobs:
       - name: Test pipeline
         run: python -m unittest discover -s pipeline/tests -v
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Install node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Test month ranges
+        run: pnpm test
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
       - name: Determine whether official data must be refreshed
         id: refresh
         env:
@@ -97,6 +118,14 @@ jobs:
           if [ "$REVIEW_HISTORY" = "true" ]; then args+=(--review-history); fi
           python -m pipeline.collect "${args[@]}"
 
+      - name: Preservar fontes oficiais para próximas coletas
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master' && steps.refresh.outputs.required == 'true'
+        uses: ./.github/actions/save-data
+        with:
+          prefix: dados-fontes-
+          source: .cache/pipeline
+          token: ${{ github.token }}
+
       - name: Restaurar pacote de dados normalizados
         id: snapshot
         if: steps.refresh.outputs.required == 'false'
@@ -112,45 +141,16 @@ jobs:
           SITE_URL: ${{ steps.pages.outputs.base_url }}
         run: python -m pipeline.restore_public --site-url "$SITE_URL"
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Install node
-        uses: actions/setup-node@v7
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Lint
-        run: pnpm run lint
-
-      - name: Test month ranges
-        run: pnpm test
-
-      - name: Typecheck
-        run: pnpm run typecheck
-
-      - name: Generate static site
-        run: pnpm run generate
-
-      - name: Preservar fontes oficiais para próximas coletas
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master' && steps.refresh.outputs.required == 'true'
-        uses: ./.github/actions/save-data
-        with:
-          prefix: dados-fontes-
-          source: .cache/pipeline
-          token: ${{ github.token }}
-
       - name: Preservar dados para alterações da interface
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master' && (steps.refresh.outputs.required == 'true' || steps.snapshot.outputs.found != 'true')
         uses: ./.github/actions/save-data
         with:
           prefix: dados-site-
           source: public/data
           token: ${{ github.token }}
+
+      - name: Generate static site
+        run: pnpm run generate
 
       - name: Preparar site para publicação
         uses: actions/upload-pages-artifact@v4

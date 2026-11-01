@@ -155,7 +155,7 @@ useSeoMeta({
 </script>
 
 <template>
-  <div class="dashboard elections-page">
+  <div class="dashboard">
     <p class="breadcrumbs">
       <NuxtLink to="/">Visão geral</NuxtLink><span aria-hidden="true">/</span> Eleições e contas do TSE
     </p>

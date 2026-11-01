@@ -39,6 +39,10 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: python -m unittest discover -s pipeline/tests -v
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm test
+      - run: pnpm run typecheck
       - name: Restaurar fontes oficiais em cache
         uses: ./.github/actions/restore-data
         with:
@@ -52,9 +56,6 @@ jobs:
           args=()
           if [ "$REVIEW_HISTORY" = "true" ]; then args+=(--review-history); fi
           python -m pipeline.collect "${args[@]}"
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm test
-      - run: pnpm check
       - name: Preservar fontes oficiais para próximas coletas
         uses: ./.github/actions/save-data
         with:
@@ -67,6 +68,7 @@ jobs:
           prefix: dados-site-
           source: public/data
           token: ${{ github.token }}
+      - run: pnpm run generate
       - name: Preparar site para publicação
         uses: actions/upload-pages-artifact@v4
         with:

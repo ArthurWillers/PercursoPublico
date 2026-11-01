@@ -419,7 +419,7 @@ useSeoMeta({
 
     <section
       v-else-if="!pending && !error && viewMode === 'fornecedores'"
-      class="directory-results suppliers-directory"
+      class="directory-results"
       aria-live="polite"
     >
       <div
