@@ -6,6 +6,7 @@ import zipfile
 from collections import Counter
 from datetime import date, timedelta
 from concurrent.futures import ThreadPoolExecutor
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from pipeline.normalize.common import cents, auxiliary_cents, iso_date, official_url, party_at, in_mandate, UNKNOWN_PARTY
 
@@ -122,8 +123,28 @@ def profiles(client, ids, current):
     today = date.today().isoformat()
     def fetch_history(key):
         source_id = key.split(':')[1]
+        if isinstance(current, dict) and isinstance(current.get(key), dict) and 'nome' in current[key]:
+            details = {'ultimoStatus': current[key]}
+            return key, details, client.json(API + '/deputados/' + source_id + '/historico', cache_days=0)['dados']
         cache_days = 0 if key in current else 365
-        return key, client.json(API + '/deputados/' + source_id, cache_days=cache_days)['dados'], client.json(API + '/deputados/' + source_id + '/historico', cache_days=cache_days)['dados']
+        history = client.json(API + '/deputados/' + source_id + '/historico', cache_days=cache_days)['dados']
+        try:
+            details = client.json(API + '/deputados/' + source_id, cache_days=cache_days)['dados']
+        except (HTTPError, URLError, TimeoutError) as exc:
+            if isinstance(exc, HTTPError):
+                exc.close()
+            if not history:
+                raise
+            latest = max(history, key=lambda row: (row.get('dataHora') or '', row.get('idLegislatura') or 0))
+            details = {
+                'ultimoStatus': {
+                    'nome': (latest.get('nome') or latest.get('nomeEleitoral') or '').strip(),
+                    'siglaPartido': (latest.get('siglaPartido') or '').rstrip('*').strip() or None,
+                    'siglaUf': latest.get('siglaUf') or '',
+                    'urlFoto': latest.get('urlFoto')
+                }
+            }
+        return key, details, history
     with ThreadPoolExecutor(max_workers=4) as executor:
         histories = list(executor.map(fetch_history, sorted(ids)))
     legislature_ids = {row['idLegislatura'] for _key, _details, history in histories for row in history if row.get('idLegislatura')}

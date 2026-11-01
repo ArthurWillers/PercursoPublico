@@ -3,11 +3,12 @@ import tempfile
 import unittest
 from decimal import Decimal
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
 from pipeline.aggregate.expenses import summarize, summarize_suppliers
 from pipeline.collect import publish, verify_output
 from pipeline.normalize.common import cents, auxiliary_cents, party_at, in_mandate, supplier_key
-from pipeline.sources.camara import normalize, mandate_from_history, affiliations_from_history
+from pipeline.sources.camara import normalize, mandate_from_history, affiliations_from_history, profiles as camara_profiles
 from pipeline.sources.senado import normalize as normalize_senado
 from pipeline.sources.tse import normalize_election, unavailable_election
 from pipeline.validate.integrity import validate, validate_suppliers, validate_election
@@ -315,29 +316,52 @@ class IntegrityTests(unittest.TestCase):
         self.assertEqual(hist_election['candidates'][0]['partyFundCents'], 30000000)
         self.assertEqual(hist_election['suppliers']['rows'][0]['supplierKey'], '98765432000188')
 
+    def test_camara_profiles_reuses_current_registry_and_falls_back_to_history_on_detail_outage(self):
+        class FakeClient:
+            def __init__(self):
+                self.calls = []
 
+            def json(self, url, cache_days=0):
+                self.calls.append((url, cache_days))
+                if url.endswith('/deputados/107970'):
+                    raise AssertionError('Não deve consultar /deputados/{id} para deputado já presente em current')
+                if url.endswith('/deputados/999999'):
+                    raise HTTPError(url, 504, 'Gateway Timeout', None, None)
+                if url.endswith('/deputados/107970/historico'):
+                    return {'dados': [
+                        {'id': 107970, 'nome': 'Ana Paula Leão', 'siglaPartido': 'PP', 'siglaUf': 'MG',
+                         'idLegislatura': 57, 'urlFoto': 'https://www.camara.leg.br/internet/deputado/bandep/107970.jpg',
+                         'dataHora': '2023-02-01T12:05', 'situacao': 'Exercício'}
+                    ]}
+                if url.endswith('/deputados/999999/historico'):
+                    return {'dados': [
+                        {'id': 999999, 'nome': 'Ex Deputada', 'siglaPartido': 'PSB**', 'siglaUf': 'BA',
+                         'idLegislatura': 56, 'urlFoto': 'https://www.camara.leg.br/internet/deputado/bandep/999999.jpg',
+                         'dataHora': '2019-02-01T10:00', 'situacao': 'Exercício'}
+                    ]}
+                if '/legislaturas/57' in url:
+                    return {'dados': {'dataInicio': '2023-02-01', 'dataFim': '2027-01-31'}}
+                if '/legislaturas/56' in url:
+                    return {'dados': {'dataInicio': '2019-02-01', 'dataFim': '2023-01-31'}}
+                raise AssertionError(f'URL inesperada: {url}')
 
-        hist_candidates = [
-            {'SEQUENCIAL_CANDIDATO': '140001', 'DESCRICAO_CARGO': 'SENADOR', 'NOME_CANDIDATO': 'SENADOR HISTORICO',
-             'NOME_URNA_CANDIDATO': 'SENADOR 2014', 'NUMERO_CANDIDATO': '456', 'SIGLA_PARTIDO': 'PSDB',
-             'UF': 'MG', 'DESC_SIT_TOT_TURNO': 'ELEITO'}
-        ]
-        hist_revenues = [
-            {'SEQUENCIAL_CANDIDATO': '140001', 'DESCRICAO_CARGO': 'SENADOR',
-             'DESC_ORIGEM_RECEITA': 'Recursos de partido político', 'FONTE_RECURSO': 'Fundo Partidário',
-             'VALOR_RECEITA': '300000,00'}
-        ]
-        hist_expenses = [
-            {'SEQUENCIAL_CANDIDATO': '140001', 'DESCRICAO_CARGO': 'SENADOR',
-             'DESC_TIPO_DESPESA': 'Publicidade por jornais e revistas',
-             'CPF_CNPJ_FORNECEDOR': '98765432000188', 'NOME_FORNECEDOR': 'EDITORA MG',
-             'VALOR_DESPESA': '250000,00'}
-        ]
-        hist_election = normalize_election(hist_candidates, hist_revenues, hist_expenses, 2014, urls)
-        validate_election(hist_election)
-        self.assertEqual(hist_election['scope'], 'geral')
-        self.assertEqual(hist_election['candidates'][0]['partyFundCents'], 30000000)
-        self.assertEqual(hist_election['suppliers']['rows'][0]['supplierKey'], '98765432000188')
+        fake_client = FakeClient()
+        current = {
+            'camara:107970': {
+                'id': 107970,
+                'nome': 'Ana Paula Leão',
+                'siglaPartido': 'PP',
+                'siglaUf': 'MG',
+                'urlFoto': 'https://www.camara.leg.br/internet/deputado/bandep/107970.jpg'
+            }
+        }
+        result = camara_profiles(fake_client, {'camara:107970', 'camara:999999'}, current)
+        self.assertEqual(result['camara:107970']['name'], 'Ana Paula Leão')
+        self.assertEqual(result['camara:107970']['party'], 'PP')
+        self.assertTrue(result['camara:107970']['current'])
+        self.assertEqual(result['camara:999999']['name'], 'Ex Deputada')
+        self.assertEqual(result['camara:999999']['party'], 'PSB')
+        self.assertFalse(result['camara:999999']['current'])
 
 
 if __name__ == '__main__':
