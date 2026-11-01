@@ -120,7 +120,7 @@ O cache de fontes e o snapshot normalizado são guardados como pacotes `.tar.gz`
 
 Anos são normalizados, escritos e validados individualmente para limitar o consumo de memória no runner. IDs de despesas do Senado são conferidos também entre anos. A publicação compactada tem um bloqueio automático antes de atingir 1 GB; ampliar a cobertura no futuro exige medir novamente seu tamanho. Se coleta, validação, geração ou preservação falhar, o job de publicação não roda e a versão válida anterior continua no ar.
 
-Para ativar a publicação, no repositório abra **Settings → Pages → Build and deployment** e selecione **GitHub Actions** como fonte. Depois execute **Actions → Coletar dados e gerar site → Run workflow** para a primeira publicação. O fluxo configura automaticamente a base `/parlamentares/` para este repositório e não precisa de secrets. O endereço esperado é https://arthurwillers.github.io/parlamentares/.
+Para ativar a publicação, no repositório abra **Settings → Pages → Build and deployment** e selecione **GitHub Actions** como fonte. Depois execute **Actions → Coletar dados e gerar site → Run workflow** para a primeira publicação. Os workflows usam automaticamente o nome atual do repositório como base do site, sem secrets. Renomear o repositório não reconstrói o artefato já publicado; execute o workflow novamente para atualizar os caminhos. O endereço atual é https://arthurwillers.github.io/PercursoPublico/.
 
 ## Fontes
 

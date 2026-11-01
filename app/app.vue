@@ -3,6 +3,7 @@ import { pt_br } from '@nuxt/ui/locale'
 
 const { brand } = useAppConfig()
 const route = useRoute()
+const baseURL = useRuntimeConfig().app.baseURL
 const navigation = [
   { label: 'Pessoas', path: '/pessoas', icon: 'i-lucide-user-round-search' },
   { label: 'Visão geral', path: '/', icon: 'i-lucide-chart-no-axes-combined' },
@@ -24,7 +25,7 @@ useHead({
     { name: 'application-name', content: brand.name }
   ],
   link: [
-    { rel: 'icon', href: '/favicon.ico' }
+    { rel: 'icon', href: `${baseURL.replace(/\/+$/, '')}/favicon.ico` }
   ],
   htmlAttrs: {
     lang: 'pt-BR'
