@@ -208,6 +208,16 @@
           },
           "additionalProperties": false
         },
+        "otherIdentified": {
+          "type": "object",
+          "required": ["cents", "count", "suppliers"],
+          "properties": {
+            "cents": { "type": "integer" },
+            "count": { "type": "integer", "minimum": 0 },
+            "suppliers": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
         "rows": {
           "type": "array",
           "items": {

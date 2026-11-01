@@ -926,6 +926,13 @@ useSeoMeta({
           </div>
 
           <p
+            v-if="election.suppliers.otherIdentified && election.suppliers.otherIdentified.count > 0"
+            class="supplier-unidentified-note"
+          >
+            Outros {{ election.suppliers.otherIdentified.suppliers.toLocaleString('pt-BR') }} fornecedores identificados de menor valor ({{ election.suppliers.otherIdentified.count.toLocaleString('pt-BR') }} registros · {{ formatMoney(election.suppliers.otherIdentified.cents) }}), sem vínculo com a cota parlamentar, estão consolidados no total da campanha.
+          </p>
+
+          <p
             v-if="election.suppliers.unidentified.count > 0"
             class="supplier-unidentified-note"
           >

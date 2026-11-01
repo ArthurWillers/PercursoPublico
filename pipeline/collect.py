@@ -1,5 +1,6 @@
 """python -m pipeline.collect [--start-year 2008] [--end-year YYYY] [--review-history]."""
 import argparse
+import gc
 import hashlib
 import json
 import os
@@ -19,7 +20,7 @@ def write_json(path, value):
     path.write_text(json.dumps(value, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
 
 
-def publish(destination, members, records, summaries, metadata, year_batches=None, suppliers=None, elections=None):
+def publish(destination, members, records, summaries, metadata, year_batches=None, suppliers=None, elections=None, election_batches=None, sources_fn=None):
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix='.financial-data-', dir=destination.parent))
     backup = destination.with_name('.data-previous')
@@ -29,23 +30,36 @@ def publish(destination, members, records, summaries, metadata, year_batches=Non
             profiles.append({key: value for key, value in member.items() if key not in ('affiliations', 'otherResources', 'otherResourcesCoverage')})
             write_json(staging / 'members' / (member['id'] + '.json'), member)
         write_json(staging / 'members.json', profiles)
+        del profiles
         if year_batches is None:
             year_batches = ((year, [row for row in records if row['year'] == year]) for year in metadata['years'])
-        for year, year_records in year_batches:
+        for batch in year_batches:
+            if len(batch) == 3:
+                year, year_records, supplier_summary = batch
+            else:
+                year, year_records = batch
+                supplier_summary = suppliers[year] if suppliers and year in suppliers else summarize_suppliers(year_records, year)
             grouped = defaultdict(list)
             for row in year_records:
                 grouped[row['memberId']].append(row)
-            write_json(staging / f'summary-{year}.json', summaries[year])
-            supplier_summary = suppliers[year] if suppliers and year in suppliers else summarize_suppliers(year_records, year)
+            write_json(staging / f'summary-{year}.json', summaries.pop(year, None) or summarize(year_records))
             write_json(staging / f'suppliers-{year}.json', supplier_summary)
             # Um arquivo vazio significa fonte coletada com sucesso, sem registros publicados.
             for member_id in members:
                 write_json(staging / 'expenses' / member_id / f'{year}.json',
                            sorted(grouped[member_id], key=lambda row: (row['month'], row['id'])))
             del grouped, year_records, supplier_summary
+            gc.collect()
         if elections:
             for election_year, election_data in sorted(elections.items()):
                 write_json(staging / f'elections-{election_year}.json', election_data)
+        if election_batches is not None:
+            for election_year, election_data in election_batches:
+                write_json(staging / f'elections-{election_year}.json', election_data)
+                del election_data
+                gc.collect()
+        if sources_fn is not None:
+            metadata['sources'] = sources_fn()
         write_json(staging / 'index.json', {key: value for key, value in metadata.items() if key != 'sources'})
         metadata['files'] = {str(path.relative_to(staging)): hashlib.sha256(path.read_bytes()).hexdigest()
                              for path in sorted(staging.rglob('*.json'))}
@@ -101,6 +115,7 @@ def verify_output(directory):
         if manifest['schemaVersion'] == '1.3.0' or suppliers_path.exists():
             suppliers_summary = json.loads(suppliers_path.read_text())
             validate_suppliers(records, suppliers_summary, members, year)
+            del suppliers_summary
         for row in records:
             if row['id'].startswith('senado:'):
                 if row['id'] in seen_senate_ids:
@@ -116,7 +131,9 @@ def verify_output(directory):
     for election_year in manifest.get('electionYears', []):
         election_path = directory / f'elections-{election_year}.json'
         if election_path.exists():
-            validate_election(json.loads(election_path.read_text()))
+            election_data = json.loads(election_path.read_text())
+            validate_election(election_data)
+            del election_data
     safe_money(historical_cents)
     return manifest
 
@@ -150,9 +167,10 @@ def main():
     print('Históricos da Câmara completos. Coletando Senado e recursos fora da cota...', flush=True)
     members.update(senado.profiles(client, senator_ids, current_senators, years))
     summaries = {}
-    suppliers = {}
     coverage = []
+    mandate_supplier_keys = set()
     cached_sources = Client(cache=client.cache, offline=True)
+
     def normalized_years():
         for year in years:
             print(f'Normalizando e validando {year}...', flush=True)
@@ -173,65 +191,61 @@ def main():
                                  'unattributed': unattributed})
                 del rows, normalized
             summaries[year] = summarize(year_records)
-            suppliers[year] = summarize_suppliers(year_records, year)
+            supplier_summary = summarize_suppliers(year_records, year)
+            for s_row in supplier_summary['rows']:
+                mandate_supplier_keys.add(s_row['supplierKey'])
             validate(year_records, summaries[year], members)
-            validate_suppliers(year_records, suppliers[year], members, year)
-            yield year, year_records
-            del year_records
+            validate_suppliers(year_records, supplier_summary, members, year)
+            yield year, year_records, supplier_summary
+            del year_records, supplier_summary
+
     for member in members.values():
         if member['mandate']:
             member['mandate']['partial'] = (member['mandate']['start'] < f'{years[0]}-01-01'
                                             or member['mandate']['end'] > datetime.now(timezone.utc).date().isoformat()
                                             or member['mandate']['start'][-2:] != '01')
+
     election_years = [y for y in tse.ELECTION_YEARS if args.start_year <= y <= args.end_year]
-    elections = {}
     elections_coverage = []
-    for election_year in election_years:
-        print(f'Coletando e validando TSE {election_year}...', flush=True)
-        election_data = tse.collect_election_year(client, election_year)
-        validate_election(election_data)
-        elections[election_year] = election_data
-        elections_coverage.append({
-            'year': election_year,
-            'scope': election_data['scope'],
-            'status': election_data['status'],
-            'reason': election_data.get('reason'),
-            'fetchedAt': election_data.get('fetchedAt'),
-            'sourceUrls': election_data['sourceUrls'],
-            'candidacies': sum(p['candidacyCount'] for p in election_data['parties']),
-            'totalRevenueCents': sum(p['totalRevenueCents'] for p in election_data['parties']),
-            'fefcCents': sum(p['fefcCents'] for p in election_data['parties']),
-            'partyFundCents': sum(p['partyFundCents'] for p in election_data['parties']),
-            'totalExpenseCents': sum(p['totalExpenseCents'] for p in election_data['parties'])
-        })
-    election_years = [y for y in tse.ELECTION_YEARS if args.start_year <= y <= args.end_year]
-    elections = {}
-    elections_coverage = []
-    for election_year in election_years:
-        print(f'Coletando e validando TSE {election_year}...', flush=True)
-        election_data = tse.collect_election_year(client, election_year)
-        validate_election(election_data)
-        elections[election_year] = election_data
-        elections_coverage.append({
-            'year': election_year,
-            'status': election_data['status'],
-            'reason': election_data.get('reason'),
-            'fetchedAt': election_data.get('fetchedAt'),
-            'sourceUrls': election_data['sourceUrls'],
-            'candidacies': sum(p['candidacyCount'] for p in election_data['parties']),
-            'totalRevenueCents': sum(p['totalRevenueCents'] for p in election_data['parties']),
-            'fefcCents': sum(p['fefcCents'] for p in election_data['parties']),
-            'partyFundCents': sum(p['partyFundCents'] for p in election_data['parties']),
-            'totalExpenseCents': sum(p['totalExpenseCents'] for p in election_data['parties'])
-        })
+
+    def normalized_elections():
+        for election_year in election_years:
+            print(f'Coletando e validando TSE {election_year}...', flush=True)
+            election_data = tse.collect_election_year(client, election_year, mandate_supplier_keys=mandate_supplier_keys)
+            validate_election(election_data)
+            elections_coverage.append({
+                'year': election_year,
+                'scope': election_data['scope'],
+                'status': election_data['status'],
+                'reason': election_data.get('reason'),
+                'fetchedAt': election_data.get('fetchedAt'),
+                'sourceUrls': election_data['sourceUrls'],
+                'candidacies': sum(p['candidacyCount'] for p in election_data['parties']),
+                'totalRevenueCents': sum(p['totalRevenueCents'] for p in election_data['parties']),
+                'fefcCents': sum(p['fefcCents'] for p in election_data['parties']),
+                'partyFundCents': sum(p['partyFundCents'] for p in election_data['parties']),
+                'totalExpenseCents': sum(p['totalExpenseCents'] for p in election_data['parties'])
+            })
+            yield election_year, election_data
+            del election_data
+
     metadata = {'schemaVersion': '1.3.0', 'generatedAt': datetime.now(timezone.utc).isoformat(),
                 'collectionMode': 'cached' if args.offline or args.resume else 'live', 'years': years,
                 'electionYears': election_years, 'electionsCoverage': elections_coverage,
-                'coverage': coverage, 'sources': sorted(client.sources.values(), key=lambda row: row['url']),
+                'coverage': coverage, 'sources': [],
                 'collectionPolicy': {'historicalReviewDays': 365, 'refreshFromYear': datetime.now(timezone.utc).year - 1},
                 'methodologyUrl': '/fontes', 'remuneration': {'status': 'not-integrated',
                 'reason': 'Não foi validado um vínculo por identificador entre folhas de remuneração e cadastros parlamentares.'}}
-    publish(args.output, members, [], summaries, metadata, year_batches=normalized_years(), suppliers=suppliers, elections=elections)
+    publish(
+        args.output,
+        members,
+        [],
+        summaries,
+        metadata,
+        year_batches=normalized_years(),
+        election_batches=normalized_elections(),
+        sources_fn=lambda: sorted(client.sources.values(), key=lambda row: row['url'])
+    )
     print(f"Publicado localmente: {len(members)} perfis, {sum(row['records'] for row in coverage)} despesas validadas.", flush=True)
 
 
