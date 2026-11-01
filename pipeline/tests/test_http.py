@@ -1,9 +1,11 @@
 """Retry handling for incomplete responses from public data APIs."""
 import hashlib
 import http.client
+import io
 import json
 import tempfile
 import unittest
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.error import HTTPError
@@ -28,6 +30,53 @@ class Response:
 
 
 class HttpRetryTests(unittest.TestCase):
+    def test_gateway_outage_can_recover_after_four_failed_attempts(self):
+        url = 'https://dadosabertos.camara.leg.br/api/v2/deputados?itens=100'
+        body = b'{"dados": []}'
+        errors = [HTTPError(url, 504, 'Gateway Timeout', None, io.BytesIO(b'timeout')) for _ in range(4)]
+        with tempfile.TemporaryDirectory() as directory:
+            client = Client(cache=Path(directory))
+            with patch('pipeline.http.urlopen', side_effect=[*errors, Response(body)]) as open_url, \
+                    patch('pipeline.http.time.sleep') as sleep, self.assertLogs('pipeline.http', level='WARNING') as logs:
+                self.assertEqual(client.get(url), body)
+            self.assertEqual(open_url.call_count, 5)
+            self.assertEqual([call.args[0] for call in sleep.call_args_list], [5, 10, 20, 40])
+            self.assertTrue(all(url in message for message in logs.output))
+            self.assertTrue(all(error.fp.closed for error in errors))
+            self.assertEqual(client.sources[url]['sha256'], hashlib.sha256(body).hexdigest())
+
+    def test_persistent_outage_fails_without_reusing_or_overwriting_old_data(self):
+        with tempfile.TemporaryDirectory() as directory:
+            url, _body, _metadata = self.seed(directory, days=1)
+            before = {path.name: path.read_bytes() for path in Path(directory).iterdir()}
+            errors = [HTTPError(url, 504, 'Gateway Timeout', None, io.BytesIO(b'timeout')) for _ in range(6)]
+            client = Client(cache=Path(directory))
+            with patch('pipeline.http.urlopen', side_effect=errors) as open_url, \
+                    patch('pipeline.http.time.sleep') as sleep, self.assertLogs('pipeline.http', level='WARNING'), \
+                    self.assertRaises(HTTPError) as raised:
+                client.get(url)
+            self.assertEqual(raised.exception.code, 504)
+            raised.exception.close()
+            self.assertEqual(open_url.call_count, 6)
+            self.assertEqual([call.args[0] for call in sleep.call_args_list], [5, 10, 20, 40, 60])
+            self.assertEqual({path.name: path.read_bytes() for path in Path(directory).iterdir()}, before)
+            self.assertNotIn(url, client.sources)
+
+    def test_permanent_http_errors_are_not_retried(self):
+        for status in (400, 401, 403, 404):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+                url = 'https://example.gov.br/expenses.json'
+                error = HTTPError(url, status, 'Unavailable', None, io.BytesIO(b'error'))
+                client = Client(cache=Path(directory))
+                expected_log = self.assertLogs('pipeline.http', level='ERROR') if status != 404 else nullcontext()
+                with patch('pipeline.http.urlopen', side_effect=error) as open_url, \
+                        patch('pipeline.http.time.sleep') as sleep, expected_log:
+                    with self.assertRaises(HTTPError) as raised:
+                        client.get(url)
+                raised.exception.close()
+                open_url.assert_called_once()
+                sleep.assert_not_called()
+
     def seed(self, directory, days=0, http_status=None):
         url = 'https://example.gov.br/expenses.json'
         body = b'{"data": []}'

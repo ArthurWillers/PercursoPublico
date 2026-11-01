@@ -2,6 +2,7 @@
 import hashlib
 from http.client import IncompleteRead, RemoteDisconnected
 import json
+import logging
 import os
 import time
 from datetime import datetime, timezone, timedelta
@@ -9,6 +10,9 @@ from decimal import Decimal
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+LOGGER = logging.getLogger(__name__)
+MAX_ATTEMPTS = 6
 
 
 class Client:
@@ -43,7 +47,7 @@ class Client:
                 headers['If-None-Match'] = previous['etag']
             if previous.get('lastModified'):
                 headers['If-Modified-Since'] = previous['lastModified']
-        for attempt in range(4):
+        for attempt in range(MAX_ATTEMPTS):
             try:
                 with urlopen(Request(url, headers=headers), timeout=90) as response:
                     body = response.read()
@@ -73,12 +77,20 @@ class Client:
                     metadata_path.write_text(json.dumps(previous))
                     self.sources[url] = previous
                     return body
-                if exc.code not in (429, 500, 502, 503, 504) or attempt == 3:
+                if exc.code not in (408, 429, 500, 502, 503, 504) or attempt == MAX_ATTEMPTS - 1:
+                    LOGGER.error('Falha ao coletar %s (tentativa %s/%s): %s', url, attempt + 1, MAX_ATTEMPTS, exc)
                     raise
-            except (IncompleteRead, RemoteDisconnected, URLError, TimeoutError):
-                if attempt == 3:
+                failure = f'HTTP {exc.code}'
+                exc.close()
+            except (IncompleteRead, RemoteDisconnected, URLError, TimeoutError) as exc:
+                if attempt == MAX_ATTEMPTS - 1:
+                    LOGGER.error('Falha ao coletar %s (tentativa %s/%s): %s', url, attempt + 1, MAX_ATTEMPTS, exc)
                     raise
-            time.sleep(2 ** attempt)
+                failure = str(exc)
+            delay = min(60, 5 * 2 ** attempt)
+            LOGGER.warning('Falha temporária ao coletar %s: %s; tentativa %s/%s em %ss',
+                           url, failure, attempt + 2, MAX_ATTEMPTS, delay)
+            time.sleep(delay)
         raise RuntimeError(f'Falha de coleta: {url}')
 
     def json(self, url, cache_days=0):

@@ -47,6 +47,8 @@ pnpm check                              # lint, tipos, integridade e generate
 
 `--offline`/`--resume` preservam o horário efetivo de cada resposta no manifesto e identificam a publicação como processada com cache. Não simulam uma nova coleta. Na coleta normal, o ano corrente e o anterior são revalidados a cada execução, com ETag/Last-Modified quando disponíveis. Anos anteriores e cadastros de ex-parlamentares são reutilizados por até 365 dias; depois são revalidados. As respostas reutilizadas preservam `fetchedAt` e têm `cacheReused: true` no manifesto. O `generatedAt` é o horário do processamento, não uma nova consulta de todas as fontes. A política aparece em `collectionPolicy` e cada Casa/ano publica seu próprio horário de coleta. `--review-history` força a revisão dos anos antigos; também está disponível como opção na execução manual dos workflows. Erros transitórios recebem tentativas limitadas; um erro em fonte obrigatória interrompe o processamento.
 
+Na coleta, falhas de conexão, respostas incompletas e HTTP 408, 429, 500, 502, 503 ou 504 recebem até seis tentativas por URL, com esperas de 5, 10, 20, 40 e 60 segundos. Os logs identificam a URL, o erro e a próxima tentativa. Se a fonte continuar indisponível, a coleta falha sem substituir o cache por uma resposta de erro nem publicar dados antigos como uma nova coleta.
+
 `public/data/` e `.cache/pipeline/` ficam fora do Git. Não edite esses arquivos manualmente. Se a coleta/validação falhar, a versão válida local anterior permanece; uma publicação externa só ocorre após sucesso de todo o workflow. Uma execução offline exige cache completo e validado por checksum.
 
 ## Arquivos publicados
