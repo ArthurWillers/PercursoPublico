@@ -43,15 +43,39 @@ runs:
       run: |
         archive_dir="$RUNNER_TEMP/restore-$DATA_PREFIX"
         mkdir -p "$archive_dir"
-        gh release download "$DATA_TAG" --repo "$GITHUB_REPOSITORY" --pattern data.tar.gz --dir "$archive_dir"
-        export DATA_ARCHIVE="$archive_dir/data.tar.gz"
+        gh release download "$DATA_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'data.tar.gz*' --dir "$archive_dir"
+        export DATA_ARCHIVE_DIR="$archive_dir"
         python - <<'PY'
         import os
+        import re
+        import shutil
         import tarfile
         from pathlib import Path
+        archive_dir = Path(os.environ['DATA_ARCHIVE_DIR'])
+        archive_path = archive_dir / 'data.tar.gz'
+        parts = sorted(archive_dir.glob('data.tar.gz.part-*'))
+        if parts:
+            if archive_path.exists():
+                raise ValueError('Pacote contém o arquivo completo e partes simultaneamente')
+            indices = []
+            for part in parts:
+                match = re.fullmatch(r'data\.tar\.gz\.part-(\d{4})', part.name)
+                if not match:
+                    raise ValueError(f'Parte de pacote com nome inválido: {part.name}')
+                indices.append(int(match.group(1)))
+            if indices != list(range(1, len(parts) + 1)):
+                raise ValueError('Partes do pacote estão incompletas ou fora de sequência')
+            with archive_path.open('wb') as combined:
+                for part in parts:
+                    with part.open('rb') as chunk:
+                        shutil.copyfileobj(chunk, combined)
+            for part in parts:
+                part.unlink()
+        if not archive_path.is_file():
+            raise FileNotFoundError('Release não contém data.tar.gz nem partes do pacote')
         destination = Path(os.environ['DATA_DESTINATION'])
         destination.mkdir(parents=True, exist_ok=True)
-        with tarfile.open(os.environ['DATA_ARCHIVE'], 'r:gz') as archive:
+        with tarfile.open(archive_path, 'r:gz') as archive:
             if any(not (item.isfile() or item.isdir()) for item in archive.getmembers()):
                 raise ValueError('Pacote de dados contém entrada não regular')
             archive.extractall(destination, filter='data')

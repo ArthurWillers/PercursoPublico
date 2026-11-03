@@ -20,15 +20,20 @@ runs:
         DATA_PREFIX: ${{ inputs.prefix }}
         DATA_SOURCE: ${{ inputs.source }}
       run: |
+        set -euo pipefail
         archive_dir="$RUNNER_TEMP/save-$DATA_PREFIX"
         mkdir -p "$archive_dir"
-        tar -czf "$archive_dir/data.tar.gz" -C "$DATA_SOURCE" .
+        tar -czf - -C "$DATA_SOURCE" . \
+          | split --bytes=1800M --numeric-suffixes=1 --suffix-length=4 - "$archive_dir/data.tar.gz.part-"
         tag="${DATA_PREFIX}${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-        gh release create "$tag" "$archive_dir/data.tar.gz" --repo "$GITHUB_REPOSITORY" \
+        gh release create "$tag" --repo "$GITHUB_REPOSITORY" \
           --target "$GITHUB_SHA" --title "Pacote de dados: $DATA_PREFIX" \
           --notes "Dados oficiais processados e validados pelo workflow. Pacote técnico para reutilização; não é uma versão da aplicação." \
           --prerelease --draft
+        trap 'gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag >/dev/null 2>&1 || true' ERR
+        gh release upload "$tag" "$archive_dir"/data.tar.gz.part-* --repo "$GITHUB_REPOSITORY"
         gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false
+        trap - ERR
     - name: Remover pacotes antigos
       uses: actions/github-script@v8
       env:
