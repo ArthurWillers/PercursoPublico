@@ -42,10 +42,45 @@ export function useParliamentarianData() {
   )
   const error = computed(() => manifestRequest.error.value || memberRequest.error.value || expenseRequest.error.value)
   const pending = computed(() => [manifestRequest.status.value, memberRequest.status.value, expenseRequest.status.value].some(status => status === 'idle' || status === 'pending'))
-  const expenses = computed(() => (expenseRequest.data.value ?? []).filter(row => matchesPeriod(row, filters)))
-  const periodLabel = computed(() => filters.period === 'mandato'
-    ? `Mandato individual${member.value?.mandate?.partial ? ' · cobertura parcial' : ''}`
-    : describePeriod(filters, years.value))
+  const mandateYear = ref<number | ''>('')
+  watch([memberId, () => filters.period], () => {
+    if (filters.period !== 'mandato') mandateYear.value = ''
+  })
+  watch(memberId, () => {
+    mandateYear.value = ''
+  })
+  const mandateYears = computed(() => {
+    if (!member.value?.mandate) return []
+    const startYear = Number(member.value.mandate.start.slice(0, 4))
+    const endYear = Number(member.value.mandate.end.slice(0, 4))
+    return years.value.filter(year => year >= startYear && year <= endYear)
+  })
+  const rawExpenses = computed(() => (expenseRequest.data.value ?? []).filter(row => matchesPeriod(row, filters)))
+  const memberHistoryYears = computed(() => {
+    const present = [...new Set(rawExpenses.value.map(row => row.year))].sort((a, b) => a - b)
+    if (!present.length) return []
+    const first = present[0]!
+    const last = present.at(-1)!
+    return years.value.filter(year => year >= first && year <= last)
+  })
+  const expenses = computed(() => {
+    if (filters.period === 'mandato' && mandateYear.value !== '') {
+      return rawExpenses.value.filter(row => row.year === mandateYear.value)
+    }
+    return rawExpenses.value
+  })
+  const periodLabel = computed(() => {
+    if (filters.period === 'mandato') {
+      const base = `Mandato individual${mandateYear.value !== '' ? ` · ${mandateYear.value}` : ''}`
+      return `${base}${member.value?.mandate?.partial ? ' · cobertura parcial' : ''}`
+    }
+    if (filters.period === 'historico') {
+      return memberHistoryYears.value.length
+        ? `Histórico do parlamentar · ${memberHistoryYears.value[0]}–${memberHistoryYears.value.at(-1)}`
+        : 'Histórico do parlamentar · sem registros'
+    }
+    return describePeriod(filters, years.value)
+  })
   const totalCents = computed(() => expenses.value.length ? expenses.value.reduce((sum, row) => sum + row.cents, 0) : null)
 
   const chamberBenchmark = computed(() => {
@@ -84,5 +119,5 @@ export function useParliamentarianData() {
     await expenseRequest.refresh()
     await summaryRequest.refresh()
   }
-  return { manifest, years, filters, member, pending, error, retry, expenses, periodLabel, totalCents, requestedYears, chamberBenchmark }
+  return { manifest, years, filters, member, pending, error, retry, expenses, periodLabel, totalCents, requestedYears, chamberBenchmark, mandateYear, mandateYears, memberHistoryYears }
 }

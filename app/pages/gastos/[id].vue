@@ -4,7 +4,7 @@ import { officialMemberProfileUrl } from '~/utils/member'
 import type { Expense } from '~/types/financial'
 
 const route = useRoute()
-const { manifest, years, filters, member, pending, error, retry, expenses, periodLabel, totalCents, chamberBenchmark } = useParliamentarianData()
+const { manifest, years, filters, member, pending, error, retry, expenses, periodLabel, totalCents, chamberBenchmark, mandateYear, mandateYears, memberHistoryYears } = useParliamentarianData()
 const officialProfileUrl = computed(() => member.value ? officialMemberProfileUrl(member.value) : null)
 
 const categories = computed(() => {
@@ -20,7 +20,7 @@ const categories = computed(() => {
 
 const monthlyAmounts = computed(() => {
   if (filters.period === 'historico') {
-    return years.value.map((year) => {
+    return memberHistoryYears.value.map((year) => {
       const yearExpenses = expenses.value.filter(expense => expense.year === year)
       return { month: String(year), cents: yearExpenses.reduce((sum, expense) => sum + expense.cents, 0), count: yearExpenses.length }
     })
@@ -37,6 +37,19 @@ const monthlyAmounts = computed(() => {
 })
 
 const monthlyMaximum = computed(() => Math.max(...monthlyAmounts.value.map(row => Math.abs(row.cents)), 1))
+
+const monthlyInsights = computed(() => {
+  const active = monthlyAmounts.value.filter(row => row.count > 0)
+  if (!active.length) return null
+  const peak = active.reduce((best, row) => (row.cents > best.cents ? row : best), active[0]!)
+  const sum = active.reduce((acc, row) => acc + row.cents, 0)
+  return {
+    activeCount: active.length,
+    averageCents: Math.round(sum / active.length),
+    peakMonth: peak.month,
+    peakCents: peak.cents
+  }
+})
 
 const totalDisallowedCents = computed(() =>
   expenses.value.reduce((sum, row) => sum + (row.disallowedCents && row.disallowedCents > 0 ? row.disallowedCents : 0), 0)
@@ -132,6 +145,10 @@ const visibleExpenses = computed(() => filteredExpenses.value.slice((page.value 
 
 watch([expenses, categoryFilter, supplierFilter, monthFilter, expenseSort], () => {
   page.value = 1
+})
+
+watch(mandateYear, () => {
+  monthFilter.value = ''
 })
 
 function toggleCategoryFilter(name: string) {
@@ -264,14 +281,27 @@ useSeoMeta({
       </div>
       <div class="profile-period">
         <label
-          v-if="filters.period !== 'historico' && filters.period !== 'personalizado'"
+          v-if="filters.period === 'mandato'"
+          class="filter-field"
+        >
+          <span>Ano no mandato</span>
+          <select v-model="mandateYear">
+            <option value="">
+              Todo o mandato{{ mandateYears.length ? ` (${mandateYears[0]}–${mandateYears.at(-1)})` : '' }}
+            </option>
+            <option
+              v-for="year in mandateYears"
+              :key="year"
+              :value="year"
+            >{{ year }}</option>
+          </select>
+        </label>
+        <label
+          v-else-if="filters.period !== 'historico' && filters.period !== 'personalizado'"
           class="filter-field"
         >
           <span>Ano</span>
-          <select
-            v-model="filters.year"
-            :disabled="filters.period === 'mandato'"
-          >
+          <select v-model="filters.year">
             <option
               v-for="year in years"
               :key="year"
@@ -283,8 +313,10 @@ useSeoMeta({
           v-else
           class="filter-field"
         >
-          <span>{{ filters.period === 'personalizado' ? 'Cobertura disponível' : 'Anos incluídos' }}</span>
-          <span class="filter-static">{{ years[0] }}–{{ years.at(-1) }}</span>
+          <span>{{ filters.period === 'personalizado' ? 'Cobertura disponível' : 'Anos do parlamentar' }}</span>
+          <span class="filter-static">
+            {{ filters.period === 'personalizado' ? `${years[0]}–${years.at(-1)}` : (memberHistoryYears.length ? `${memberHistoryYears[0]}–${memberHistoryYears.at(-1)}` : 'Sem registros') }}
+          </span>
         </div>
         <label class="filter-field">
           <span>Período</span>
@@ -359,7 +391,7 @@ useSeoMeta({
       v-if="filters.period === 'mandato'"
       class="mandate-warning"
     >
-      Mandato individual: {{ formatDate(member.mandate?.start) }} a {{ formatDate(member.mandate?.end) }}. Cobertura coletada: {{ years[0] }} a {{ years.at(-1) }}. Meses de fronteira incompletos são excluídos; o mandato em andamento ou iniciado antes da coleta tem cobertura parcial.
+      Mandato individual publicado: {{ formatDate(member.mandate?.start) }} a {{ formatDate(member.mandate?.end) }}. A fonte consolidada publica apenas o mandato mais recente registrado para este perfil; para consultar mandatos anteriores, use “Histórico disponível” ou “Período personalizado”. Meses de fronteira incompletos são excluídos.
     </p>
 
     <template v-if="!pending && !error">
@@ -428,7 +460,15 @@ useSeoMeta({
               </h2>
               <p>Clique em uma categoria para filtrar as notas abaixo</p>
             </div>
-            <span>{{ periodLabel }}</span>
+            <button
+              v-if="categoryFilter"
+              type="button"
+              class="chart-clear-btn"
+              @click="categoryFilter = ''"
+            >
+              Limpar categoria
+            </button>
+            <span v-else>{{ periodLabel }}</span>
           </header>
           <ul
             v-if="categories.length"
@@ -535,6 +575,23 @@ useSeoMeta({
           >
             Sem registros publicados no período selecionado.
           </p>
+          <dl
+            v-if="monthlyInsights"
+            class="profile-monthly-summary"
+          >
+            <div>
+              <dt>{{ filters.period === 'historico' ? 'Maior ano' : 'Maior mês' }}</dt>
+              <dd>{{ monthLabel(monthlyInsights.peakMonth) }} · {{ formatMoney(monthlyInsights.peakCents) }}</dd>
+            </div>
+            <div>
+              <dt>{{ filters.period === 'historico' ? 'Média por ano com registro' : 'Média nos meses com registro' }}</dt>
+              <dd>{{ formatMoney(monthlyInsights.averageCents) }}</dd>
+            </div>
+            <div>
+              <dt>{{ filters.period === 'historico' ? 'Anos com registro' : 'Meses com registro' }}</dt>
+              <dd>{{ monthlyInsights.activeCount }}</dd>
+            </div>
+          </dl>
         </article>
       </section>
 

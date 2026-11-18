@@ -96,6 +96,18 @@ useHead({
         >{{ brand.name }}</NuxtLink>
         <p>{{ brand.tagline }}</p>
         <NuxtLink to="/fontes">Fontes e metodologia</NuxtLink>
+        <a
+          href="https://github.com/ArthurWillers/PercursoPublico"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="footer-github"
+        >
+          <UIcon
+            name="i-simple-icons-github"
+            aria-hidden="true"
+          />
+          GitHub
+        </a>
         <a href="#top">Voltar ao início <UIcon
           name="i-lucide-arrow-up"
           aria-hidden="true"
