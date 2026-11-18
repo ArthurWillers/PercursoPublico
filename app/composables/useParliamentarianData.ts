@@ -1,8 +1,16 @@
 import type { Expense, Manifest, Parliamentarian, SummaryRow } from '~/types/financial'
 import { selectedYears, matchesPeriod, periodLabel as describePeriod } from '~/utils/period'
-import { calculateMedianCents } from '~/utils/financial'
+import { calculateMedianCents, formatDate } from '~/utils/financial'
 import { fetchPublicJson } from '~/utils/fetchPublicJson'
 import { publicDataUrl } from '~/utils/publicDataUrl'
+
+export interface MandatePeriodOption {
+  id: string
+  label: string
+  startYear: number
+  endYear: number
+  isPublished: boolean
+}
 
 export function useParliamentarianData() {
   const route = useRoute()
@@ -42,20 +50,102 @@ export function useParliamentarianData() {
   )
   const error = computed(() => manifestRequest.error.value || memberRequest.error.value || expenseRequest.error.value)
   const pending = computed(() => [manifestRequest.status.value, memberRequest.status.value, expenseRequest.status.value].some(status => status === 'idle' || status === 'pending'))
+  const allMemberExpenses = computed(() => expenseRequest.data.value ?? [])
+  const selectedMandateId = ref('atual')
   const mandateYear = ref<number | ''>('')
+
+  const mandateOptions = computed<MandatePeriodOption[]>(() => {
+    const options: MandatePeriodOption[] = []
+    const mandate = member.value?.mandate
+    const publishedStartYear = mandate ? Number(mandate.start.slice(0, 4)) : null
+    if (mandate && publishedStartYear !== null) {
+      options.push({
+        id: 'atual',
+        label: `Mandato publicado (${formatDate(mandate.start)} – ${formatDate(mandate.end)})`,
+        startYear: publishedStartYear,
+        endYear: Number(mandate.end.slice(0, 4)),
+        isPublished: true
+      })
+    }
+
+    const earlierYears = [...new Set(
+      allMemberExpenses.value
+        .map(row => row.year)
+        .filter(year => publishedStartYear === null || year < publishedStartYear)
+    )].sort((a, b) => b - a)
+
+    if (earlierYears.length) {
+      if (member.value?.chamber === 'deputados') {
+        const blocks: Array<[number, number]> = [
+          [2019, 2022],
+          [2015, 2018],
+          [2011, 2014],
+          [2007, 2010]
+        ]
+        for (const [start, end] of blocks) {
+          const boundedEnd = publishedStartYear !== null ? Math.min(end, publishedStartYear - 1) : end
+          if (boundedEnd < start) continue
+          if (earlierYears.some(year => year >= start && year <= boundedEnd)) {
+            const firstInBlock = Math.max(start, years.value[0] ?? start)
+            options.push({
+              id: `${firstInBlock}-${boundedEnd}`,
+              label: `Registros anteriores (${firstInBlock}–${boundedEnd})`,
+              startYear: firstInBlock,
+              endYear: boundedEnd,
+              isPublished: false
+            })
+          }
+        }
+      } else {
+        const firstEarlier = earlierYears.at(-1)!
+        const lastEarlier = earlierYears[0]!
+        options.push({
+          id: `${firstEarlier}-${lastEarlier}`,
+          label: `Registros anteriores (${firstEarlier}–${lastEarlier})`,
+          startYear: firstEarlier,
+          endYear: lastEarlier,
+          isPublished: false
+        })
+      }
+    }
+
+    return options
+  })
+
+  const selectedMandate = computed(() =>
+    mandateOptions.value.find(option => option.id === selectedMandateId.value) ?? mandateOptions.value[0] ?? null
+  )
+
   watch([memberId, () => filters.period], () => {
-    if (filters.period !== 'mandato') mandateYear.value = ''
+    if (filters.period !== 'mandato') {
+      mandateYear.value = ''
+      selectedMandateId.value = 'atual'
+    }
   })
   watch(memberId, () => {
     mandateYear.value = ''
+    selectedMandateId.value = 'atual'
   })
+  watch(selectedMandateId, () => {
+    mandateYear.value = ''
+  })
+
   const mandateYears = computed(() => {
-    if (!member.value?.mandate) return []
-    const startYear = Number(member.value.mandate.start.slice(0, 4))
-    const endYear = Number(member.value.mandate.end.slice(0, 4))
-    return years.value.filter(year => year >= startYear && year <= endYear)
+    if (!selectedMandate.value) return []
+    return years.value.filter(year => year >= selectedMandate.value!.startYear && year <= selectedMandate.value!.endYear)
   })
-  const rawExpenses = computed(() => (expenseRequest.data.value ?? []).filter(row => matchesPeriod(row, filters)))
+
+  const rawExpenses = computed(() => {
+    if (filters.period === 'mandato' && selectedMandate.value) {
+      if (selectedMandate.value.isPublished) {
+        return allMemberExpenses.value.filter(row => row.inMandate)
+      }
+      return allMemberExpenses.value.filter(
+        row => row.year >= selectedMandate.value!.startYear && row.year <= selectedMandate.value!.endYear
+      )
+    }
+    return allMemberExpenses.value.filter(row => matchesPeriod(row, filters))
+  })
   const memberHistoryYears = computed(() => {
     const present = [...new Set(rawExpenses.value.map(row => row.year))].sort((a, b) => a - b)
     if (!present.length) return []
@@ -71,6 +161,9 @@ export function useParliamentarianData() {
   })
   const periodLabel = computed(() => {
     if (filters.period === 'mandato') {
+      if (selectedMandate.value && !selectedMandate.value.isPublished) {
+        return `Registros ${selectedMandate.value.startYear}–${selectedMandate.value.endYear}${mandateYear.value !== '' ? ` · ${mandateYear.value}` : ''} · recorte por ano`
+      }
       const base = `Mandato individual${mandateYear.value !== '' ? ` · ${mandateYear.value}` : ''}`
       return `${base}${member.value?.mandate?.partial ? ' · cobertura parcial' : ''}`
     }
@@ -119,5 +212,5 @@ export function useParliamentarianData() {
     await expenseRequest.refresh()
     await summaryRequest.refresh()
   }
-  return { manifest, years, filters, member, pending, error, retry, expenses, periodLabel, totalCents, requestedYears, chamberBenchmark, mandateYear, mandateYears, memberHistoryYears }
+  return { manifest, years, filters, member, pending, error, retry, expenses, periodLabel, totalCents, requestedYears, chamberBenchmark, mandateYear, mandateYears, memberHistoryYears, mandateOptions, selectedMandateId, selectedMandate }
 }

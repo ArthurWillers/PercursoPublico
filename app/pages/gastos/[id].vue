@@ -4,7 +4,7 @@ import { officialMemberProfileUrl } from '~/utils/member'
 import type { Expense } from '~/types/financial'
 
 const route = useRoute()
-const { manifest, years, filters, member, pending, error, retry, expenses, periodLabel, totalCents, chamberBenchmark, mandateYear, mandateYears, memberHistoryYears } = useParliamentarianData()
+const { manifest, years, filters, member, pending, error, retry, expenses, periodLabel, totalCents, chamberBenchmark, mandateYear, mandateYears, memberHistoryYears, mandateOptions, selectedMandateId, selectedMandate } = useParliamentarianData()
 const officialProfileUrl = computed(() => member.value ? officialMemberProfileUrl(member.value) : null)
 
 const categories = computed(() => {
@@ -147,7 +147,7 @@ watch([expenses, categoryFilter, supplierFilter, monthFilter, expenseSort], () =
   page.value = 1
 })
 
-watch(mandateYear, () => {
+watch([mandateYear, selectedMandateId], () => {
   monthFilter.value = ''
 })
 
@@ -280,22 +280,31 @@ useSeoMeta({
         </p>
       </div>
       <div class="profile-period">
-        <label
-          v-if="filters.period === 'mandato'"
-          class="filter-field"
-        >
-          <span>Ano no mandato</span>
-          <select v-model="mandateYear">
-            <option value="">
-              Todo o mandato{{ mandateYears.length ? ` (${mandateYears[0]}–${mandateYears.at(-1)})` : '' }}
-            </option>
-            <option
-              v-for="year in mandateYears"
-              :key="year"
-              :value="year"
-            >{{ year }}</option>
-          </select>
-        </label>
+        <template v-if="filters.period === 'mandato'">
+          <label class="filter-field">
+            <span>Mandato</span>
+            <select v-model="selectedMandateId">
+              <option
+                v-for="option in mandateOptions"
+                :key="option.id"
+                :value="option.id"
+              >{{ option.label }}</option>
+            </select>
+          </label>
+          <label class="filter-field">
+            <span>Ano no mandato</span>
+            <select v-model="mandateYear">
+              <option value="">
+                Todo o recorte{{ mandateYears.length ? ` (${mandateYears[0]}–${mandateYears.at(-1)})` : '' }}
+              </option>
+              <option
+                v-for="year in mandateYears"
+                :key="year"
+                :value="year"
+              >{{ year }}</option>
+            </select>
+          </label>
+        </template>
         <label
           v-else-if="filters.period !== 'historico' && filters.period !== 'personalizado'"
           class="filter-field"
@@ -391,7 +400,12 @@ useSeoMeta({
       v-if="filters.period === 'mandato'"
       class="mandate-warning"
     >
-      Mandato individual publicado: {{ formatDate(member.mandate?.start) }} a {{ formatDate(member.mandate?.end) }}. A fonte consolidada publica apenas o mandato mais recente registrado para este perfil; para consultar mandatos anteriores, use “Histórico disponível” ou “Período personalizado”. Meses de fronteira incompletos são excluídos.
+      <template v-if="selectedMandate && !selectedMandate.isPublished">
+        Recorte por anos anteriores ({{ selectedMandate.startYear }}–{{ selectedMandate.endYear }}). A fonte consolidada publica datas exatas de posse e afastamento apenas para o mandato mais recente; este recorte reúne os registros publicados nessas competências anuais.
+      </template>
+      <template v-else>
+        Mandato individual publicado: {{ formatDate(member.mandate?.start) }} a {{ formatDate(member.mandate?.end) }}. Meses de fronteira incompletos são excluídos; o mandato em andamento ou iniciado antes da coleta tem cobertura parcial.
+      </template>
     </p>
 
     <template v-if="!pending && !error">

@@ -4122,7 +4122,7 @@ body { font-size: 15px; line-height: 1.55; }
 /* Profile Page: Eliminate blank whitespace & chart overlap */
 .profile-header {
   padding-block: 22px;
-  grid-template-columns: 68px minmax(0, 1fr) minmax(200px, 240px);
+  grid-template-columns: 68px minmax(0, 1fr) minmax(220px, 280px);
 }
 
 .mandate-warning {
